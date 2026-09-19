@@ -1,7 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { nowIso, publicId, sha256, stableJson, tokenize } from "./util.mjs";
+import { nowIso, publicId, repositoryDomainId, sha256, stableJson, tokenize } from "./util.mjs";
 
 export class BrainStore {
   constructor(dbPath) {
@@ -21,6 +21,7 @@ export class BrainStore {
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         cwd TEXT NOT NULL,
+        repository_id TEXT NOT NULL,
         session_file TEXT,
         git_commit_start TEXT,
         started_at TEXT NOT NULL,
@@ -38,6 +39,7 @@ export class BrainStore {
         raw_output_sha256 TEXT NOT NULL,
         output_truncated INTEGER NOT NULL DEFAULT 0,
         cwd TEXT NOT NULL,
+        repository_id TEXT NOT NULL,
         git_commit TEXT,
         git_dirty INTEGER NOT NULL DEFAULT 0,
         git_status_hash TEXT,
@@ -65,6 +67,7 @@ export class BrainStore {
         confidence REAL NOT NULL DEFAULT 1.0 CHECK(confidence >= 0 AND confidence <= 1),
         status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','retracted')),
         session_id TEXT NOT NULL REFERENCES sessions(id),
+        repository_id TEXT NOT NULL,
         created_at TEXT NOT NULL,
         retracted_at TEXT
       );
@@ -102,6 +105,38 @@ export class BrainStore {
     if (!ledgerColumns.includes("payload_json")) {
       this.db.exec(`ALTER TABLE ledger ADD COLUMN payload_json TEXT NOT NULL DEFAULT '{}'`);
     }
+    for (const table of ["sessions", "observations", "claims"]) {
+      const columns = this.db.prepare(`PRAGMA table_info(${table})`).all().map((row) => row.name);
+      if (!columns.includes("repository_id")) this.db.exec(`ALTER TABLE ${table} ADD COLUMN repository_id TEXT`);
+    }
+    const sessions = this.db.prepare(`SELECT id,cwd,repository_id FROM sessions`).all();
+    const setSessionDomain = this.db.prepare(`UPDATE sessions SET repository_id=? WHERE id=?`);
+    for (const row of sessions) if (!row.repository_id) setSessionDomain.run(repositoryDomainId(row.cwd), row.id);
+    this.db.exec(`
+      UPDATE observations SET repository_id=(SELECT repository_id FROM sessions WHERE sessions.id=observations.session_id) WHERE repository_id IS NULL;
+      UPDATE claims SET repository_id=(SELECT repository_id FROM sessions WHERE sessions.id=claims.session_id) WHERE repository_id IS NULL;
+      CREATE INDEX IF NOT EXISTS idx_session_repository ON sessions(repository_id);
+      CREATE INDEX IF NOT EXISTS idx_obs_repository ON observations(repository_id);
+      CREATE INDEX IF NOT EXISTS idx_claim_repository ON claims(repository_id);
+      CREATE TRIGGER IF NOT EXISTS trg_observation_repository_domain
+      BEFORE INSERT ON observations
+      BEGIN
+        SELECT CASE WHEN NEW.repository_id IS NULL OR NEW.repository_id != (SELECT repository_id FROM sessions WHERE id=NEW.session_id)
+          THEN RAISE(ABORT, 'observation repository domain mismatch') END;
+      END;
+      CREATE TRIGGER IF NOT EXISTS trg_claim_repository_domain
+      BEFORE INSERT ON claims
+      BEGIN
+        SELECT CASE WHEN NEW.repository_id IS NULL OR NEW.repository_id != (SELECT repository_id FROM sessions WHERE id=NEW.session_id)
+          THEN RAISE(ABORT, 'claim repository domain mismatch') END;
+      END;
+      CREATE TRIGGER IF NOT EXISTS trg_claim_evidence_repository_domain
+      BEFORE INSERT ON claim_evidence
+      BEGIN
+        SELECT CASE WHEN (SELECT repository_id FROM claims WHERE id=NEW.claim_id) != (SELECT repository_id FROM observations WHERE id=NEW.observation_id)
+          THEN RAISE(ABORT, 'cross-repository evidence forbidden') END;
+      END;
+    `);
   }
 
   close() {
@@ -109,11 +144,12 @@ export class BrainStore {
     this.db.close();
   }
 
-  startSession({ cwd, sessionFile = null, gitCommit = null }) {
+  startSession({ cwd, sessionFile = null, gitCommit = null, repositoryId = null }) {
     const id = publicId("S");
-    this.db.prepare(`INSERT INTO sessions(id,cwd,session_file,git_commit_start,started_at) VALUES(?,?,?,?,?)`)
-      .run(id, cwd, sessionFile, gitCommit, nowIso());
-    this.#ledger("session_start", id, { cwd, sessionFile, gitCommit });
+    const domain = repositoryId ?? repositoryDomainId(cwd);
+    this.db.prepare(`INSERT INTO sessions(id,cwd,repository_id,session_file,git_commit_start,started_at) VALUES(?,?,?,?,?,?)`)
+      .run(id, cwd, domain, sessionFile, gitCommit, nowIso());
+    this.#ledger("session_start", id, { cwd, repositoryId: domain, sessionFile, gitCommit });
     return id;
   }
 
@@ -125,16 +161,20 @@ export class BrainStore {
   addObservation(data) {
     const publicIdValue = publicId("O");
     const at = nowIso();
+    const session = this.db.prepare(`SELECT cwd,repository_id FROM sessions WHERE id=?`).get(data.sessionId);
+    if (!session) throw new Error(`unknown session: ${data.sessionId}`);
+    const domain = repositoryDomainId(data.cwd);
+    if (domain !== session.repository_id) throw new Error(`observation repository domain mismatch: session=${session.repository_id} observation=${domain}`);
     this.db.prepare(`
       INSERT INTO observations(
         public_id,session_id,tool_call_id,tool_name,input_json,output_text,output_sha256,raw_output_sha256,
-        output_truncated,cwd,git_commit,git_dirty,git_status_hash,artifact_path,artifact_sha256,created_at
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        output_truncated,cwd,repository_id,git_commit,git_dirty,git_status_hash,artifact_path,artifact_sha256,created_at
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(
       publicIdValue, data.sessionId, data.toolCallId ?? null, data.toolName,
       stableJson(data.input ?? {}), data.outputText ?? "", data.outputSha256,
       data.rawOutputSha256 ?? data.outputSha256, data.outputTruncated ? 1 : 0,
-      data.cwd, data.gitCommit ?? null, data.gitDirty ? 1 : 0, data.gitStatusHash ?? null,
+      data.cwd, domain, data.gitCommit ?? null, data.gitDirty ? 1 : 0, data.gitStatusHash ?? null,
       data.artifactPath ?? null, data.artifactSha256 ?? null, at
     );
     this.#ledger("observation", publicIdValue, {
@@ -146,6 +186,7 @@ export class BrainStore {
       rawOutputSha256: data.rawOutputSha256 ?? data.outputSha256,
       outputTruncated: Boolean(data.outputTruncated),
       cwd: data.cwd,
+      repositoryId: domain,
       gitCommit: data.gitCommit ?? null,
       gitDirty: Boolean(data.gitDirty),
       gitStatusHash: data.gitStatusHash ?? null,
@@ -198,20 +239,24 @@ export class BrainStore {
     if (!Array.isArray(evidenceIds) || evidenceIds.length === 0) {
       throw new Error("Phase refuses ungrounded memory: provide at least one observation ID");
     }
+    const session = this.db.prepare(`SELECT repository_id FROM sessions WHERE id=?`).get(sessionId);
+    if (!session) throw new Error(`unknown session: ${sessionId}`);
     const unique = [...new Set(evidenceIds.map(String))];
     const placeholders = unique.map(() => "?").join(",");
-    const rows = this.db.prepare(`SELECT id,public_id FROM observations WHERE public_id IN (${placeholders})`).all(...unique);
+    const rows = this.db.prepare(`SELECT id,public_id,repository_id FROM observations WHERE public_id IN (${placeholders})`).all(...unique);
     if (rows.length !== unique.length) {
       const found = new Set(rows.map((r) => r.public_id));
       const missing = unique.filter((id) => !found.has(id));
       throw new Error(`unknown evidence ID(s): ${missing.join(", ")}`);
     }
+    const foreign = rows.filter((row) => row.repository_id !== session.repository_id);
+    if (foreign.length) throw new Error(`cross-repository evidence forbidden: ${foreign.map((row) => row.public_id).join(", ")}`);
     const publicIdValue = publicId("M");
     const at = nowIso();
     this.db.exec("BEGIN IMMEDIATE");
     try {
-      const result = this.db.prepare(`INSERT INTO claims(public_id,claim,confidence,session_id,created_at) VALUES(?,?,?,?,?)`)
-        .run(publicIdValue, clean, Number(confidence), sessionId, at);
+      const result = this.db.prepare(`INSERT INTO claims(public_id,claim,confidence,session_id,repository_id,created_at) VALUES(?,?,?,?,?,?)`)
+        .run(publicIdValue, clean, Number(confidence), sessionId, session.repository_id, at);
       const claimId = Number(result.lastInsertRowid);
       const link = this.db.prepare(`INSERT INTO claim_evidence(claim_id,observation_id) VALUES(?,?)`);
       for (const row of rows) link.run(claimId, row.id);
@@ -220,7 +265,7 @@ export class BrainStore {
       try { this.db.exec("ROLLBACK"); } catch {}
       throw error;
     }
-    this.#ledger("claim", publicIdValue, { claim: clean, confidence: Number(confidence), evidenceIds: unique, sessionId, createdAt: at });
+    this.#ledger("claim", publicIdValue, { claim: clean, confidence: Number(confidence), evidenceIds: unique, sessionId, repositoryId: session.repository_id, createdAt: at });
     return publicIdValue;
   }
 
@@ -252,7 +297,7 @@ export class BrainStore {
   }
 
   listActiveClaims() {
-    return this.db.prepare(`SELECT public_id,claim,confidence,created_at FROM claims WHERE status='active' ORDER BY id`).all();
+    return this.db.prepare(`SELECT public_id,claim,confidence,repository_id,created_at FROM claims WHERE status='active' ORDER BY id`).all();
   }
 
   activeClaimDigest() {
@@ -260,24 +305,27 @@ export class BrainStore {
       publicId: row.public_id,
       claim: row.claim,
       confidence: Number(row.confidence),
+      repositoryId: row.repository_id,
       createdAt: row.created_at
     }))));
   }
 
   getClaimsByIds(ids, scopeCwd = null) {
     const unique = [...new Set((ids ?? []).map(String))];
+    const domain = scopeCwd ? repositoryDomainId(scopeCwd) : null;
     const out = [];
     for (const id of unique) {
       const claim = this.getClaim(id);
-      if (claim && claim.status === 'active' && (!scopeCwd || claim.scope_cwd === scopeCwd)) out.push(claim);
+      if (claim && claim.status === 'active' && (!domain || claim.repository_id === domain)) out.push(claim);
     }
     return out;
   }
 
   searchClaims(query, limit = 6, scopeCwd = null) {
     const tokens = tokenize(query).filter((t) => t.length >= 3);
-    const rows = scopeCwd
-      ? this.db.prepare(`SELECT c.* FROM claims c JOIN sessions s ON s.id=c.session_id WHERE c.status='active' AND s.cwd=? ORDER BY c.id DESC LIMIT 1000`).all(scopeCwd)
+    const domain = scopeCwd ? repositoryDomainId(scopeCwd) : null;
+    const rows = domain
+      ? this.db.prepare(`SELECT * FROM claims WHERE status='active' AND repository_id=? ORDER BY id DESC LIMIT 1000`).all(domain)
       : this.db.prepare(`SELECT * FROM claims WHERE status='active' ORDER BY id DESC LIMIT 1000`).all();
     const scored = rows.map((row) => {
       const hay = String(row.claim).toLowerCase();
@@ -338,6 +386,7 @@ export class BrainStore {
         rawOutputSha256: obs.raw_output_sha256,
         outputTruncated: Boolean(obs.output_truncated),
         cwd: obs.cwd,
+        ...(Object.hasOwn(payload, 'repositoryId') ? { repositoryId: obs.repository_id } : {}),
         gitCommit: obs.git_commit ?? null,
         gitDirty: Boolean(obs.git_dirty),
         gitStatusHash: obs.git_status_hash ?? null,
@@ -378,14 +427,25 @@ export class BrainStore {
         JOIN claim_evidence ce ON ce.observation_id=o.id
         WHERE ce.claim_id=? ORDER BY o.id
       `).all(claim.id).map((row) => row.public_id);
-      const current = { claim: claim.claim, confidence: Number(claim.confidence), evidenceIds, sessionId: claim.session_id, createdAt: claim.created_at };
-      if (stableJson(current) !== stableJson(JSON.parse(ledgerRow.payload_json))) {
+      const claimPayload = JSON.parse(ledgerRow.payload_json);
+      const current = { claim: claim.claim, confidence: Number(claim.confidence), evidenceIds, sessionId: claim.session_id, ...(Object.hasOwn(claimPayload, 'repositoryId') ? { repositoryId: claim.repository_id } : {}), createdAt: claim.created_at };
+      if (stableJson(current) !== stableJson(claimPayload)) {
         return { ok: false, reason: "claim row does not match ledger payload", entityId: claim.public_id };
       }
       const retract = this.db.prepare(`SELECT 1 ok FROM ledger WHERE kind='claim_retract' AND entity_id=? LIMIT 1`).get(claim.public_id);
       if (claim.status === "retracted" && !retract) return { ok: false, reason: "retracted claim missing ledger event", entityId: claim.public_id };
       if (claim.status === "active" && retract) return { ok: false, reason: "active claim has retraction ledger event", entityId: claim.public_id };
     }
+
+    const crossDomain = this.db.prepare(`
+      SELECT c.public_id claim_id,o.public_id observation_id
+      FROM claim_evidence ce
+      JOIN claims c ON c.id=ce.claim_id
+      JOIN observations o ON o.id=ce.observation_id
+      WHERE c.repository_id IS NULL OR o.repository_id IS NULL OR c.repository_id != o.repository_id
+      LIMIT 1
+    `).get();
+    if (crossDomain) return { ok: false, reason: "cross-repository evidence link", entityId: crossDomain.claim_id, evidenceId: crossDomain.observation_id };
 
     return { ok: true, entries: rows.length, head: prev, observations: observations.length, actions: actions.length, claims: claims.length };
   }

@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process';
 import { runHarness } from '../src/harness-runner.mjs';
 import { loadHarnessConfig, validateHarnessBoundary } from '../src/harness-config.mjs';
 import { startDashboard } from '../src/dashboard-server.mjs';
+import { probeWorkerIsolation } from '../src/worker-isolation.mjs';
 
 function sh(cwd,...args){return execFileSync(args[0],args.slice(1),{cwd,encoding:'utf8'});}
 function initRepo(dir){
@@ -16,13 +17,14 @@ function initRepo(dir){
   sh(dir,'git','add','.');sh(dir,'git','commit','-qm','init');
 }
 
-test('v0.5 harness keeps hidden evaluator out of worker view and produces visual/training artifacts', async () => {
+test('v0.6 harness OS-isolates hidden evaluator and produces visual/training artifacts', async (t) => {
+  const probe=probeWorkerIsolation(); if(!probe.available){t.skip(`OS isolation unavailable: ${probe.reason}`);return;}
   const root=mkdtempSync(join(tmpdir(),'phase-harness-v05-'));const repo=join(root,'repo');const operator=join(root,'operator');mkdirSync(repo);mkdirSync(operator);initRepo(repo);
   const hiddenSource=join(operator,'hidden_check.py');
   writeFileSync(hiddenSource,"from pathlib import Path\nassert Path('app.txt').read_text() == 'right\\n'\nassert Path('worker-saw-hidden.txt').read_text() == 'false'\n");
   const hiddenTarget='tests/.phase-hidden-check.py';
-  const worker=join(operator,'worker.mjs');
-  writeFileSync(worker,`import {existsSync,writeFileSync} from 'node:fs';\nfor await (const _ of process.stdin){}\nwriteFileSync('worker-saw-hidden.txt',String(existsSync(${JSON.stringify(hiddenTarget)})));\nwriteFileSync('app.txt','right\\n');\n`);
+  const worker=join(repo,'worker.mjs');
+  writeFileSync(worker,`import {existsSync,writeFileSync} from 'node:fs';\nfor await (const _ of process.stdin){}\nwriteFileSync('worker-saw-hidden.txt',String(existsSync(${JSON.stringify(hiddenTarget)}) || existsSync('../operator/hidden_check.py') || existsSync('/proc/1/root')));\nwriteFileSync('app.txt','right\\n');\n`);
   const config=join(operator,'task.json');
   writeFileSync(config,JSON.stringify({id:'firewall-test',cwd:repo,task:'repair the app',worker:{adapter:'shell',command:`node ${JSON.stringify(worker)}`},verify:{public:['python public_check.py'],hidden:[`python ${hiddenTarget}`]},hidden:{install:[{from:hiddenSource,to:hiddenTarget}],paths:[hiddenTarget]},training:{enabled:true}},null,2));
   try{
@@ -32,6 +34,9 @@ test('v0.5 harness keeps hidden evaluator out of worker view and produces visual
     assert.equal(existsSync(join(repo,hiddenTarget)),false);
     assert.equal(r.firewall.brainFrozen,true);
     assert.equal(r.firewall.auditPassed,true);
+    assert.equal(r.firewall.osIsolation.available,true);
+    assert.equal(r.firewall.osIsolation.backend,'linux-chroot');
+    assert.equal(r.firewall.osIsolation.failClosed,true);
     assert.equal(r.hiddenValidation.length,1);
     assert.equal(r.hiddenValidation[0].status,0);
     assert.ok(existsSync(r.reportPath));

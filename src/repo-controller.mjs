@@ -108,6 +108,8 @@ export async function runRepoController({
   controllerModel = process.env.PHASE_CONTROLLER_MODEL ?? 'phase-repo-governor',
   maxSteps = Number(process.env.PHASE_CONTROLLER_MAX_STEPS ?? 12),
   maxRepairs = Number(process.env.PHASE_CONTROLLER_MAX_REPAIRS ?? 2),
+  workerIsolation = null,
+  workerEnv = {},
   onStep = null
 } = {}) {
   if (!task) throw new Error('task is required');
@@ -151,7 +153,7 @@ export async function runRepoController({
           resultText = JSON.stringify(state.brief);
         } else if (behavior === 'delegate' || behavior === 'repair') {
           if (!state.brief) state.brief = inspectRepository(cwd, safeTask, store, phaseIndex);
-          const worker = await runCloudWorker({ cwd, prompt: workerPrompt({ task: safeTask, brief: state.brief, state, mode: behavior }), command: cloudCommand, extraEnv: { PHASE_DB: store.dbPath } });
+          const worker = await runCloudWorker({ cwd, prompt: workerPrompt({ task: safeTask, brief: state.brief, state, mode: behavior }), command: cloudCommand, extraEnv: { ...workerEnv, PHASE_DB: store.dbPath }, isolation: workerIsolation });
           state.workerRuns += 1;
           if (behavior === 'repair') { state.repairs += 1; state.validationAttempted = false; state.validationPassed = false; }
           resultText = JSON.stringify(worker);

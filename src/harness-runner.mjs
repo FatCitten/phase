@@ -9,6 +9,7 @@ import { loadHarnessConfig, publicValidationShell, validateHarnessBoundary } fro
 import { workerAdapterSummary } from './adapters.mjs';
 import { writeRunReport } from './run-report.mjs';
 import { exportRunTrainingData } from './training-export.mjs';
+import { buildIsolationPlan, probeWorkerIsolation } from './worker-isolation.mjs';
 
 function hash(path){const h=createHash('sha256');h.update(readFileSync(path));return h.digest('hex');}
 function cmdLabel(c,i,scope){return `${scope} ${i+1}: ${Array.isArray(c)?c.join(' '):String(c)}`;}
@@ -17,6 +18,13 @@ function pathInside(cwd,raw){return isAbsolute(raw)?raw:resolve(cwd,raw);}
 
 export async function runHarness(configPath, { onStep = null } = {}) {
   const cfg=loadHarnessConfig(configPath);validateHarnessBoundary(cfg);
+  const isolationProtected=[cfg.configPath,...cfg.hiddenCopies.map(x=>resolve(x.from)),...cfg.referencePaths.map(x=>resolve(x))];
+  let isolationPreflight={available:true,backend:null,reason:null};
+  if(cfg.isolationEnabled){
+    isolationPreflight=probeWorkerIsolation();
+    if(cfg.isolationRequired&&!isolationPreflight.available)throw new Error(`Phase hidden-evaluator isolation unavailable: ${isolationPreflight.reason}`);
+    if(isolationPreflight.available)buildIsolationPlan({cwd:cfg.cwd,command:cfg.worker.command,readPaths:cfg.isolationReadPaths,protectedPaths:isolationProtected,env:{...process.env,...cfg.worker.env}});
+  }
   for(const raw of cfg.hiddenPaths){const p=pathInside(cfg.cwd,raw);if(existsSync(p))throw new Error(`hidden evaluator path already visible before run: ${p}`);}
   for(const item of cfg.hiddenCopies){const to=pathInside(cfg.cwd,item.to);if(existsSync(to))throw new Error(`hidden install target already visible before run: ${to}`);}
 
@@ -29,7 +37,7 @@ export async function runHarness(configPath, { onStep = null } = {}) {
   const started=performance.now();
   let controller;
   try {
-    controller=await runRepoController({cwd:cfg.cwd,task:cfg.task,dbPath,cloudCommand:cfg.worker.command,policy:cfg.policy,maxSteps:cfg.maxSteps,maxRepairs:cfg.maxRepairs,onStep});
+    controller=await runRepoController({cwd:cfg.cwd,task:cfg.task,dbPath,cloudCommand:cfg.worker.command,policy:cfg.policy,maxSteps:cfg.maxSteps,maxRepairs:cfg.maxRepairs,workerEnv:cfg.worker.env,workerIsolation:{enabled:cfg.isolationEnabled,required:cfg.isolationRequired,readPaths:cfg.isolationReadPaths,protectedPaths:isolationProtected},onStep});
   } finally {
     if(oldIndex==null)delete process.env.PHASE_INDEX_PATH;else process.env.PHASE_INDEX_PATH=oldIndex;
     if(oldValidate==null)delete process.env.PHASE_VALIDATE_COMMAND;else process.env.PHASE_VALIDATE_COMMAND=oldValidate;
@@ -64,7 +72,7 @@ export async function runHarness(configPath, { onStep = null } = {}) {
   const publicPass=publicValidation.every(x=>x.status===0);
   const hiddenPass=hiddenValidation.length===cfg.hiddenCommands.length&&hiddenValidation.every(x=>x.status===0);
   const passed=Boolean(controller.success&&publicPass&&audit.passed&&brainFrozen&&hiddenPass);
-  const result={schema:'phase-harness-run-v1',runId:cfg.id,task:cfg.task,cwd:cfg.cwd,tags:cfg.tags,worker:workerAdapterSummary(cfg.worker),policy:cfg.policy,brainDb:dbPath,phaseIndex:indexPath,controller,publicValidation,hiddenValidation,ledgerHeadBeforeHidden,audit,firewall:{configOutsideWorktree:!(cfg.configPath===cfg.cwd||cfg.configPath.startsWith(`${cfg.cwd}/`)),hiddenAssetsInstalled:cfg.hiddenCopies.length,hiddenCommands:cfg.hiddenCommands.length,brainFrozen,auditPassed:audit.passed},wallTimeMs:performance.now()-started,passed};
+  const result={schema:'phase-harness-run-v1',runId:cfg.id,task:cfg.task,cwd:cfg.cwd,tags:cfg.tags,worker:workerAdapterSummary(cfg.worker),policy:cfg.policy,brainDb:dbPath,phaseIndex:indexPath,controller,publicValidation,hiddenValidation,ledgerHeadBeforeHidden,audit,firewall:{configOutsideWorktree:!(cfg.configPath===cfg.cwd||cfg.configPath.startsWith(`${cfg.cwd}/`)),hiddenAssetsInstalled:cfg.hiddenCopies.length,hiddenCommands:cfg.hiddenCommands.length,brainFrozen,auditPassed:audit.passed,osIsolation:{enabled:cfg.isolationEnabled,required:cfg.isolationRequired,available:isolationPreflight.available,backend:isolationPreflight.backend,failClosed:cfg.isolationRequired}},wallTimeMs:performance.now()-started,passed};
   const resultPath=join(runDir,'result.json');writeFileSync(resultPath,JSON.stringify(result,null,2));
   let training=null;if(cfg.trainingEnabled)training=exportRunTrainingData({runResult:result,runDir,includePrivate:cfg.exportFullTrace});
   const reportPath=join(runDir,'report.html');if(cfg.reportEnabled)writeRunReport({...result,training},reportPath,{title:cfg.reportTitle});

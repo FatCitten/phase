@@ -1,5 +1,5 @@
 import { createHash, randomBytes } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { execFileSync } from "node:child_process";
 
@@ -51,6 +51,17 @@ function git(cwd, args) {
   } catch {
     return null;
   }
+}
+
+export function canonicalRepositoryPath(cwd) {
+  const absolute = resolve(cwd);
+  const root = git(absolute, ["rev-parse", "--show-toplevel"]);
+  const target = root || absolute;
+  try { return realpathSync(target); } catch { return resolve(target); }
+}
+
+export function repositoryDomainId(cwd) {
+  return `R${sha256(canonicalRepositoryPath(cwd)).slice(0, 24).toUpperCase()}`;
 }
 
 export function gitSnapshot(cwd) {

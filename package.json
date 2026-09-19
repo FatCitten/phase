@@ -1,7 +1,7 @@
 {
   "name": "phase-harness",
-  "version": "0.5.0",
-  "description": "Phase Harness: visual, auditable coding-agent orchestration with a hidden-evaluator firewall and training-ready behavior traces.",
+  "version": "0.6.0",
+  "description": "Phase Harness: provenance-enforced coding-agent orchestration with OS-isolated hidden evaluation and repository-scoped memory.",
   "type": "module",
   "license": "MIT",
   "engines": {

@@ -27,6 +27,10 @@ export function loadHarnessConfig(path) {
   const denyPatterns = arr(raw.hidden?.deny ?? raw.deny_patterns).map(String);
   const referencePaths = arr(raw.hidden?.reference ?? raw.reference_paths).map(String);
   const id = String(raw.id ?? `phase-${Date.now()}`);
+  const hiddenConfigured = hiddenCopies.length > 0 || hiddenPaths.length > 0 || hiddenCommands.length > 0;
+  const isolationEnabled = raw.isolation?.enabled ?? hiddenConfigured;
+  const isolationRequired = raw.isolation?.required ?? hiddenConfigured;
+  const isolationReadPaths = arr(raw.isolation?.read ?? raw.isolation?.read_paths).map((p) => resolve(String(p)));
   return {
     id, configPath, cwd, task, worker,
     publicCommands,
@@ -35,6 +39,9 @@ export function loadHarnessConfig(path) {
     hiddenPaths,
     denyPatterns,
     referencePaths,
+    isolationEnabled: Boolean(isolationEnabled),
+    isolationRequired: Boolean(isolationRequired),
+    isolationReadPaths,
     policy: String(raw.governor?.policy ?? raw.policy ?? 'heuristic'),
     maxSteps: Number(raw.governor?.max_steps ?? raw.max_steps ?? 12),
     maxRepairs: Number(raw.governor?.max_repairs ?? raw.max_repairs ?? 2),

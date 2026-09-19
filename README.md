@@ -1,4 +1,4 @@
-# Phase Harness v0.5
+# Phase Harness v0.6
 
 **Make coding agents observable, testable, replayable, and training-ready without building a harness.**
 
@@ -34,7 +34,7 @@ Phase does **not** train the local governor to write patches. It distills how su
 
 ## 30-second workflow
 
-Requires Node.js 22+ and Git.
+Requires Node.js 22+, Git, and Linux user/mount namespaces for hidden-evaluator runs.
 
 ```bash
 npm install
@@ -120,6 +120,12 @@ The config is intentionally small. Keep it **outside the worker repository** so 
     ]
   },
 
+  "isolation": {
+    "enabled": true,
+    "required": true,
+    "read": []
+  },
+
   "governor": {
     "policy": "heuristic",
     "max_repairs": 2
@@ -194,7 +200,11 @@ Run ordering is enforced:
 11. generate visual report + training data
 ```
 
-This is stronger than “the prompt says not to look at the tests.” Hidden evaluator files literally do not exist in the workspace while the worker is alive.
+This is stronger than “the prompt says not to look at the tests.” Hidden evaluator files do not exist in the workspace while the worker is alive, and v0.6 also places the worker behind an OS filesystem boundary.
+
+For hidden-evaluator runs on Linux, Phase creates a user + mount namespace, builds a temporary chroot containing only the repository plus read-only runtime/tool paths, leaves host `/proc` out of the sandbox, and drops all capabilities before executing the worker. The operator config, hidden evaluator sources, and other protected paths are absent from the worker filesystem. If Phase cannot establish that boundary, a required hidden run fails closed rather than falling back to an unrestricted shell.
+
+If a worker needs an extra host directory containing its runtime or configuration, add it explicitly under `isolation.read` (for example, a narrowly scoped Pi config directory). The original `HOME` path is preserved inside the sandbox but starts empty except for explicitly exposed subpaths. Phase rejects a read allowlist that would also expose a protected evaluator asset.
 
 The report makes the boundary explicit and records:
 
@@ -203,6 +213,19 @@ The report makes the boundary explicit and records:
 - whether the provenance audit passed,
 - whether the brain remained byte-identical during hidden evaluation,
 - which behavior step triggered repair/retry.
+
+---
+
+## Provenance domains
+
+Every session, observation, and memory claim is assigned a repository domain derived from the canonical Git repository root (or canonical working directory when no Git root exists). Evidence cannot cross that boundary.
+
+Phase enforces this twice:
+
+- `BrainStore` rejects cross-domain observations and claim evidence before writing them.
+- SQLite triggers reject cross-repository `claim_evidence` links even if application code is bypassed.
+
+Ledger verification also scans for cross-domain evidence links, and retrieval scopes memories by repository domain rather than only comparing raw working-directory strings.
 
 ---
 

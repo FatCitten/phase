@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BrainStore } from "../src/store.mjs";
@@ -123,4 +123,29 @@ test("phase-native index rebuilds when canonical claims change", () => {
     assert.notEqual(idx.claimDigest, first);
     assert.equal(idx.search("stamina movement", 3).candidates[0].id, m);
   } finally { x.store.close(); rmSync(x.dir, { recursive: true, force: true }); }
+});
+
+
+test("rejects cross-repository evidence at the storage boundary", () => {
+  const root = mkdtempSync(join(tmpdir(), "phase-domain-"));
+  const a = join(root, "a"), b = join(root, "b");
+  mkdirSync(a); mkdirSync(b);
+  const store = new BrainStore(join(root, "brain.sqlite"));
+  try {
+    const sa = store.startSession({ cwd: a });
+    const sb = store.startSession({ cwd: b });
+    const oa = store.addObservation({
+      sessionId: sa, toolName: "read", input: { path: "a.txt" }, outputText: "A fact",
+      outputSha256: sha256("A fact"), rawOutputSha256: sha256("A fact"), cwd: a
+    });
+    assert.throws(() => store.addClaim({ sessionId: sb, claim: "B claims A fact", evidenceIds: [oa] }), /cross-repository evidence forbidden/);
+
+    const bDomain = store.db.prepare(`SELECT repository_id FROM sessions WHERE id=?`).get(sb).repository_id;
+    const claimRow = store.db.prepare(`INSERT INTO claims(public_id,claim,confidence,session_id,repository_id,created_at) VALUES(?,?,?,?,?,?)`)
+      .run('MTRIGGERTEST', 'direct SQL cross-domain probe', 1, sb, bDomain, new Date().toISOString());
+    const obsRow = store.db.prepare(`SELECT id FROM observations WHERE public_id=?`).get(oa);
+    assert.throws(() => store.db.prepare(`INSERT INTO claim_evidence(claim_id,observation_id) VALUES(?,?)`).run(Number(claimRow.lastInsertRowid), obsRow.id), /cross-repository evidence forbidden/);
+    store.db.prepare(`DELETE FROM claims WHERE public_id='MTRIGGERTEST'`).run();
+    assert.equal(store.verifyLedger().ok, true);
+  } finally { store.close(); rmSync(root, { recursive: true, force: true }); }
 });

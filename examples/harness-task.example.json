@@ -25,6 +25,11 @@
       "tests/.phase-hidden-auth.js"
     ]
   },
+  "isolation": {
+    "enabled": true,
+    "required": true,
+    "read": []
+  },
   "governor": {
     "policy": "heuristic",
     "max_steps": 12,
