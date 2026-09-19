@@ -1,0 +1,14 @@
+{
+  "id": "my-agent",
+  "label": "My Agent Harness",
+  "detect": ["my-agent"],
+  "invocation": {
+    "argv": ["my-agent", "run", "--headless", "{prompt}"],
+    "prompt": "argv"
+  },
+  "model_args": ["--model", "{model}"],
+  "config_copy": ["~/.config/my-agent"],
+  "runtime_read": [],
+  "env": {},
+  "notes": "Any non-interactive coding harness can be described here without modifying Phase."
+}

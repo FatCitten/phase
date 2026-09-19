@@ -3,7 +3,7 @@
   "cwd": "/home/me/project",
   "task": "Fix the refresh-token regression without changing normal login behavior.",
   "worker": {
-    "adapter": "pi"
+    "adapter": "auto"
   },
   "verify": {
     "public": [

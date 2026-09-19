@@ -23,7 +23,7 @@ export async function runHarness(configPath, { onStep = null } = {}) {
   if(cfg.isolationEnabled){
     isolationPreflight=probeWorkerIsolation();
     if(cfg.isolationRequired&&!isolationPreflight.available)throw new Error(`Phase hidden-evaluator isolation unavailable: ${isolationPreflight.reason}`);
-    if(isolationPreflight.available)buildIsolationPlan({cwd:cfg.cwd,command:cfg.worker.command,readPaths:cfg.isolationReadPaths,protectedPaths:isolationProtected,env:{...process.env,...cfg.worker.env}});
+    if(isolationPreflight.available)buildIsolationPlan({cwd:cfg.cwd,command:(cfg.worker.argv??[cfg.worker.command]).filter(Boolean).join(' '),readPaths:cfg.isolationReadPaths,copyPaths:cfg.isolationCopyPaths,protectedPaths:isolationProtected,env:{...process.env,...cfg.worker.env}});
   }
   for(const raw of cfg.hiddenPaths){const p=pathInside(cfg.cwd,raw);if(existsSync(p))throw new Error(`hidden evaluator path already visible before run: ${p}`);}
   for(const item of cfg.hiddenCopies){const to=pathInside(cfg.cwd,item.to);if(existsSync(to))throw new Error(`hidden install target already visible before run: ${to}`);}
@@ -37,7 +37,7 @@ export async function runHarness(configPath, { onStep = null } = {}) {
   const started=performance.now();
   let controller;
   try {
-    controller=await runRepoController({cwd:cfg.cwd,task:cfg.task,dbPath,cloudCommand:cfg.worker.command,policy:cfg.policy,maxSteps:cfg.maxSteps,maxRepairs:cfg.maxRepairs,workerEnv:cfg.worker.env,workerIsolation:{enabled:cfg.isolationEnabled,required:cfg.isolationRequired,readPaths:cfg.isolationReadPaths,protectedPaths:isolationProtected},onStep});
+    controller=await runRepoController({cwd:cfg.cwd,task:cfg.task,dbPath,workerAdapter:cfg.worker,cloudCommand:cfg.worker.command,policy:cfg.policy,maxSteps:cfg.maxSteps,maxRepairs:cfg.maxRepairs,workerEnv:cfg.worker.env,workerIsolation:{enabled:cfg.isolationEnabled,required:cfg.isolationRequired,readPaths:cfg.isolationReadPaths,copyPaths:cfg.isolationCopyPaths,protectedPaths:isolationProtected},onStep});
   } finally {
     if(oldIndex==null)delete process.env.PHASE_INDEX_PATH;else process.env.PHASE_INDEX_PATH=oldIndex;
     if(oldValidate==null)delete process.env.PHASE_VALIDATE_COMMAND;else process.env.PHASE_VALIDATE_COMMAND=oldValidate;

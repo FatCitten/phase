@@ -29,3 +29,17 @@ test('linux chroot worker cannot traverse to sibling evaluator or remount proc',
     assert.equal(existsSync(join(repo,'../operator/hidden.txt')),true); // host still owns it; only worker namespace was restricted.
   } finally {rmSync(root,{recursive:true,force:true});}
 });
+
+test('sandbox config copies are writable for the agent without mutating host credentials', async (t) => {
+  const probe=probeWorkerIsolation(); if(!probe.available){t.skip(`OS isolation unavailable: ${probe.reason}`);return;}
+  const root=mkdtempSync(join(tmpdir(),'phase-isolation-copy-'));const repo=join(root,'repo'),agent=join(root,'agent');mkdirSync(repo);mkdirSync(agent);
+  const auth=join(agent,'auth.json');writeFileSync(auth,'{"token":"original"}\n');
+  const command=`node -e ${JSON.stringify(`const fs=require('fs');const p=${JSON.stringify(auth)};const before=fs.readFileSync(p,'utf8');fs.writeFileSync(p,'{\\"token\\":\\"refreshed\\"}\\n');fs.writeFileSync('copy-result.txt',before+'|'+fs.readFileSync(p,'utf8'))`)}`;
+  try {
+    const result=await runCloudWorker({cwd:repo,prompt:'',command,isolation:{enabled:true,required:true,copyPaths:[agent]}});
+    assert.equal(result.ok,true);
+    assert.match(readFileSync(join(repo,'copy-result.txt'),'utf8'),/original.*refreshed/s);
+    assert.equal(readFileSync(auth,'utf8'),'{"token":"original"}\n');
+    assert.equal(result.isolation.copiedConfigPaths,1);
+  } finally {rmSync(root,{recursive:true,force:true});}
+});

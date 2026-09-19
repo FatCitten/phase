@@ -75,17 +75,18 @@ export function probeWorkerIsolation() {
   return { available: true, backend: 'linux-chroot', reason: null };
 }
 
-export function buildIsolationPlan({ cwd, command, readPaths = [], protectedPaths = [], env = process.env } = {}) {
+export function buildIsolationPlan({ cwd, command, readPaths = [], copyPaths = [], protectedPaths = [], env = process.env } = {}) {
   cwd = canonical(cwd ?? process.cwd());
   const ro = uniqExisting([...defaultIsolationReadPaths(command, env), ...(readPaths ?? [])]).filter((p) => !inside(p, cwd));
   if (ro.some((p) => p === '/')) throw new Error('Phase isolation refuses to expose host root read-only');
+  const copied = uniqExisting(copyPaths ?? []).filter((p) => !inside(p, cwd));
   const protectedResolved = uniqExisting(protectedPaths ?? []);
   for (const secret of protectedResolved) {
     if (inside(secret, cwd)) continue;
-    const exposing = ro.find((root) => inside(secret, root));
-    if (exposing) throw new Error(`isolation read path would expose protected evaluator asset: ${exposing}`);
+    const exposing = [...ro, ...copied].find((root) => inside(secret, root));
+    if (exposing) throw new Error(`isolation read/copy path would expose protected evaluator asset: ${exposing}`);
   }
-  return { backend: 'linux-chroot', cwd, readPaths: ro, protectedCount: protectedResolved.length };
+  return { backend: 'linux-chroot', cwd, readPaths: ro, copyPaths: copied, protectedCount: protectedResolved.length };
 }
 
 const SETUP = `
@@ -104,6 +105,16 @@ bind_one() {
   mode=$1
   src=$2
   dst="$ROOT$src"
+  if [ "$mode" = copy ]; then
+    mkdir -p "$(dirname "$dst")"
+    if [ -d "$src" ]; then
+      mkdir -p "$dst"
+      cp -a "$src/." "$dst/"
+    else
+      cp -a "$src" "$dst"
+    fi
+    return
+  fi
   if [ -d "$src" ]; then
     mkdir -p "$dst"
   else
@@ -138,20 +149,20 @@ export PHASE_SANDBOX_COMMAND="$COMMAND"
 exec chroot "$ROOT" /usr/bin/setpriv --bounding-set=-all --inh-caps=-all --ambient-caps=-all --no-new-privs /bin/bash -c 'cd "$PHASE_SANDBOX_CWD"; exec /bin/bash -lc "$PHASE_SANDBOX_COMMAND"'
 `;
 
-export function createIsolatedInvocation({ cwd, command, readPaths = [], protectedPaths = [], env = process.env, required = true } = {}) {
+export function createIsolatedInvocation({ cwd, command, readPaths = [], copyPaths = [], protectedPaths = [], env = process.env, required = true } = {}) {
   const probe = probeWorkerIsolation();
   if (!probe.available) {
     if (required) throw new Error(`Phase worker isolation unavailable: ${probe.reason}`);
     return null;
   }
-  const plan = buildIsolationPlan({ cwd, command, readPaths, protectedPaths, env });
+  const plan = buildIsolationPlan({ cwd, command, readPaths, copyPaths, protectedPaths, env });
   const root = mkdtempSync(join(tmpdir(), 'phase-worker-root-'));
-  const specs = [`${FULL_ACCESS}:${plan.cwd}`, ...plan.readPaths.map((p) => `${READ_ACCESS}:${p}`)];
+  const specs = [`${FULL_ACCESS}:${plan.cwd}`, ...plan.readPaths.map((p) => `${READ_ACCESS}:${p}`), ...plan.copyPaths.map((p) => `copy:${p}`)];
   return {
     file: 'unshare',
     args: ['--user', '--map-root-user', '--mount', '--fork', '--kill-child', 'sh', '-ceu', SETUP, 'phase-isolation', root, plan.cwd, String(command), ...specs],
     cwd: plan.cwd,
     cleanup: () => { try { rmSync(root, { recursive: true, force: true }); } catch {} },
-    metadata: { enabled: true, backend: plan.backend, failClosed: Boolean(required), protectedCount: plan.protectedCount }
+    metadata: { enabled: true, backend: plan.backend, failClosed: Boolean(required), protectedCount: plan.protectedCount, copiedConfigPaths: plan.copyPaths.length }
   };
 }

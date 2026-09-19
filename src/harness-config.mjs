@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { isAbsolute, resolve } from 'node:path';
+import { dirname, isAbsolute, resolve } from 'node:path';
 import { resolveWorkerAdapter } from './adapters.mjs';
 
 function arr(x) { return x == null ? [] : Array.isArray(x) ? x : [x]; }
@@ -19,7 +19,7 @@ export function loadHarnessConfig(path) {
   const cwd = resolve(raw.cwd ?? '.');
   const task = String(raw.task ?? raw.prompt ?? '').trim();
   if (!task) throw new Error('harness config requires task');
-  const worker = resolveWorkerAdapter(raw.worker ?? { command: raw.cloud_command });
+  const worker = resolveWorkerAdapter(raw.worker ?? (raw.cloud_command ? { adapter: 'shell', command: raw.cloud_command } : {}), { baseDir: dirname(configPath) });
   const publicCommands = strCommands(raw.verify?.public ?? raw.public_validation_commands ?? raw.public_validation_command);
   const hiddenCommands = strCommands(raw.verify?.hidden ?? raw.hidden_validation_commands ?? raw.validation_commands);
   const hiddenCopies = normalizeCopies(raw.hidden?.install ?? raw.hidden_copies ?? []);
@@ -28,9 +28,10 @@ export function loadHarnessConfig(path) {
   const referencePaths = arr(raw.hidden?.reference ?? raw.reference_paths).map(String);
   const id = String(raw.id ?? `phase-${Date.now()}`);
   const hiddenConfigured = hiddenCopies.length > 0 || hiddenPaths.length > 0 || hiddenCommands.length > 0;
-  const isolationEnabled = raw.isolation?.enabled ?? hiddenConfigured;
+  const isolationEnabled = raw.isolation?.enabled ?? true;
   const isolationRequired = raw.isolation?.required ?? hiddenConfigured;
-  const isolationReadPaths = arr(raw.isolation?.read ?? raw.isolation?.read_paths).map((p) => resolve(String(p)));
+  const isolationReadPaths = [...new Set([...worker.isolationReadPaths, ...arr(raw.isolation?.read ?? raw.isolation?.read_paths).map((p) => resolve(String(p)))])];
+  const isolationCopyPaths = [...new Set([...worker.isolationCopyPaths, ...arr(raw.isolation?.copy ?? raw.isolation?.copy_paths).map((p) => resolve(String(p)))])];
   return {
     id, configPath, cwd, task, worker,
     publicCommands,
@@ -42,6 +43,7 @@ export function loadHarnessConfig(path) {
     isolationEnabled: Boolean(isolationEnabled),
     isolationRequired: Boolean(isolationRequired),
     isolationReadPaths,
+    isolationCopyPaths,
     policy: String(raw.governor?.policy ?? raw.policy ?? 'heuristic'),
     maxSteps: Number(raw.governor?.max_steps ?? raw.max_steps ?? 12),
     maxRepairs: Number(raw.governor?.max_repairs ?? raw.max_repairs ?? 2),

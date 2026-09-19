@@ -17,7 +17,7 @@ function initRepo(dir){
   sh(dir,'git','add','.');sh(dir,'git','commit','-qm','init');
 }
 
-test('v0.6 harness OS-isolates hidden evaluator and produces visual/training artifacts', async (t) => {
+test('v0.7 generic argv harness OS-isolates hidden evaluator and produces visual/training artifacts', async (t) => {
   const probe=probeWorkerIsolation(); if(!probe.available){t.skip(`OS isolation unavailable: ${probe.reason}`);return;}
   const root=mkdtempSync(join(tmpdir(),'phase-harness-v05-'));const repo=join(root,'repo');const operator=join(root,'operator');mkdirSync(repo);mkdirSync(operator);initRepo(repo);
   const hiddenSource=join(operator,'hidden_check.py');
@@ -26,7 +26,7 @@ test('v0.6 harness OS-isolates hidden evaluator and produces visual/training art
   const worker=join(repo,'worker.mjs');
   writeFileSync(worker,`import {existsSync,writeFileSync} from 'node:fs';\nfor await (const _ of process.stdin){}\nwriteFileSync('worker-saw-hidden.txt',String(existsSync(${JSON.stringify(hiddenTarget)}) || existsSync('../operator/hidden_check.py') || existsSync('/proc/1/root')));\nwriteFileSync('app.txt','right\\n');\n`);
   const config=join(operator,'task.json');
-  writeFileSync(config,JSON.stringify({id:'firewall-test',cwd:repo,task:'repair the app',worker:{adapter:'shell',command:`node ${JSON.stringify(worker)}`},verify:{public:['python public_check.py'],hidden:[`python ${hiddenTarget}`]},hidden:{install:[{from:hiddenSource,to:hiddenTarget}],paths:[hiddenTarget]},training:{enabled:true}},null,2));
+  writeFileSync(config,JSON.stringify({id:'firewall-test',cwd:repo,task:'repair the app',worker:{adapter:'exec',argv:['node',worker],prompt:'stdin'},verify:{public:['python public_check.py'],hidden:[`python ${hiddenTarget}`]},hidden:{install:[{from:hiddenSource,to:hiddenTarget}],paths:[hiddenTarget]},training:{enabled:true}},null,2));
   try{
     const r=await runHarness(config);
     assert.equal(r.passed,true);

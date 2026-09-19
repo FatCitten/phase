@@ -1,7 +1,7 @@
 {
   "name": "phase-harness",
-  "version": "0.6.0",
-  "description": "Phase Harness: provenance-enforced coding-agent orchestration with OS-isolated hidden evaluation and repository-scoped memory.",
+  "version": "0.7.0",
+  "description": "Phase Harness: harness-agnostic provenance-enforced coding-agent orchestration with OS-isolated hidden evaluation.",
   "type": "module",
   "license": "MIT",
   "engines": {

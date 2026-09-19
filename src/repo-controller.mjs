@@ -103,6 +103,7 @@ export async function runRepoController({
   task,
   dbPath = null,
   cloudCommand = process.env.PHASE_CLOUD_COMMAND,
+  workerAdapter = null,
   policy = process.env.PHASE_CONTROLLER_POLICY ?? 'heuristic',
   controllerUrl = process.env.PHASE_CONTROLLER_URL ?? 'http://127.0.0.1:8080/v1',
   controllerModel = process.env.PHASE_CONTROLLER_MODEL ?? 'phase-repo-governor',
@@ -153,7 +154,7 @@ export async function runRepoController({
           resultText = JSON.stringify(state.brief);
         } else if (behavior === 'delegate' || behavior === 'repair') {
           if (!state.brief) state.brief = inspectRepository(cwd, safeTask, store, phaseIndex);
-          const worker = await runCloudWorker({ cwd, prompt: workerPrompt({ task: safeTask, brief: state.brief, state, mode: behavior }), command: cloudCommand, extraEnv: { ...workerEnv, PHASE_DB: store.dbPath }, isolation: workerIsolation });
+          const worker = await runCloudWorker({ cwd, prompt: workerPrompt({ task: safeTask, brief: state.brief, state, mode: behavior }), adapter: workerAdapter, command: cloudCommand, extraEnv: { ...workerEnv, PHASE_DB: store.dbPath }, isolation: workerIsolation });
           state.workerRuns += 1;
           if (behavior === 'repair') { state.repairs += 1; state.validationAttempted = false; state.validationPassed = false; }
           resultText = JSON.stringify(worker);

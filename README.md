@@ -1,8 +1,8 @@
-# Phase Harness v0.6
+# Phase Harness v0.7
 
 **Make coding agents observable, testable, replayable, and training-ready without building a harness.**
 
-Phase sits above Pi, Codex, Claude Code, or any shell-driven coding agent. The cloud agent still writes code. Phase owns the repository workflow around it:
+Phase sits above Pi, Codex, Claude Code, Gemini CLI, OpenCode, Aider, or any non-interactive coding-agent harness. The cloud agent still writes code. Phase owns the repository workflow around it:
 
 ```text
 TASK
@@ -95,7 +95,7 @@ The config is intentionally small. Keep it **outside the worker repository** so 
   "task": "Fix the refresh-token regression without changing normal login behavior.",
 
   "worker": {
-    "adapter": "pi"
+    "adapter": "auto"
   },
 
   "verify": {
@@ -140,43 +140,106 @@ The config is intentionally small. Keep it **outside the worker repository** so 
 
 ### Workers
 
-Built-in adapters:
-
-```json
-{ "worker": { "adapter": "pi" } }
-```
-
-uses:
+Phase v0.7 uses a harness-agnostic adapter contract. See what is installed:
 
 ```bash
-pi -p --approve
+phase agents
 ```
 
-Codex:
+The zero-config default is:
 
 ```json
-{ "worker": { "adapter": "codex" } }
+{ "worker": { "adapter": "auto" } }
 ```
 
-uses the non-interactive workspace-write path:
+`auto` detects known non-interactive CLIs in this order: Pi, Codex, Claude Code, Gemini CLI, OpenCode, then Aider. Set `PHASE_AGENT=<id>` to pin the choice.
 
-```bash
-codex exec --sandbox workspace-write -
+Built-in IDs are:
+
+```text
+pi  codex  claude  gemini  opencode  aider  exec  shell
 ```
 
-Any other coding harness:
+You can select one directly:
+
+```json
+{ "worker": { "adapter": "claude" } }
+```
+
+Phase passes prompts by stdin or as a real argv value according to the adapter profile. Known agent auth/config paths (for example `~/.pi/agent`, `~/.codex`, `~/.claude`, or `~/.gemini`) are automatically added as narrow ephemeral writable sandbox copies when they exist. They still pass through the hidden-asset exposure check.
+
+### Any current or future agent harness
+
+If the harness has a non-interactive executable, Phase does not need native source support. Prefer the generic argv adapter:
+
+```json
+{
+  "worker": {
+    "adapter": "exec",
+    "argv": ["my-agent", "run", "--headless"],
+    "prompt": "stdin",
+    "config_copy": ["~/.config/my-agent"],
+    "runtime_read": []
+  }
+}
+```
+
+For agents that take the prompt as an argument:
+
+```json
+{
+  "worker": {
+    "adapter": "exec",
+    "argv": ["my-agent", "run", "--prompt", "{prompt}"],
+    "prompt": "argv"
+  }
+}
+```
+
+`argv` mode is preferred because Phase passes the prompt as one process argument rather than evaluating prompt text as shell syntax.
+
+For reusable third-party support, put the contract in a JSON manifest:
+
+```json
+{
+  "worker": {
+    "manifest": "./my-agent.phase.json",
+    "model": "optional-model-id"
+  }
+}
+```
+
+Example manifest:
+
+```json
+{
+  "id": "my-agent",
+  "label": "My Agent Harness",
+  "detect": ["my-agent"],
+  "invocation": {
+    "argv": ["my-agent", "run", "--headless", "{prompt}"],
+    "prompt": "argv"
+  },
+  "model_args": ["--model", "{model}"],
+  "config_copy": ["~/.config/my-agent"],
+  "runtime_read": []
+}
+```
+
+That is the full integration boundary: launch non-interactively, accept a task over stdin or argv, and edit `cwd`. Phase continues to own isolation, provenance, validation, hidden evaluation, reports, and training export.
+
+Legacy shell commands remain supported:
 
 ```json
 {
   "worker": {
     "adapter": "shell",
-    "label": "My Cloud Coder",
     "command": "my-agent --non-interactive"
   }
 }
 ```
 
-The worker receives the task through stdin and operates directly in `cwd`.
+The shell adapter defaults to prompt-on-stdin.
 
 ---
 
@@ -200,11 +263,11 @@ Run ordering is enforced:
 11. generate visual report + training data
 ```
 
-This is stronger than “the prompt says not to look at the tests.” Hidden evaluator files do not exist in the workspace while the worker is alive, and v0.6 also places the worker behind an OS filesystem boundary.
+This is stronger than “the prompt says not to look at the tests.” Hidden evaluator files do not exist in the workspace while the worker is alive, and v0.6+ also places the worker behind an OS filesystem boundary.
 
 For hidden-evaluator runs on Linux, Phase creates a user + mount namespace, builds a temporary chroot containing only the repository plus read-only runtime/tool paths, leaves host `/proc` out of the sandbox, and drops all capabilities before executing the worker. The operator config, hidden evaluator sources, and other protected paths are absent from the worker filesystem. If Phase cannot establish that boundary, a required hidden run fails closed rather than falling back to an unrestricted shell.
 
-If a worker needs an extra host directory containing its runtime or configuration, add it explicitly under `isolation.read` (for example, a narrowly scoped Pi config directory). The original `HOME` path is preserved inside the sandbox but starts empty except for explicitly exposed subpaths. Phase rejects a read allowlist that would also expose a protected evaluator asset.
+Known agent credential/config paths are copied into the sandbox as ephemeral writable state so token refreshes and session writes do not touch the host. If a worker needs extra executable/runtime files, add them under `isolation.read`; if it needs writable host-derived state, add a narrow path under `isolation.copy`. The original `HOME` path is preserved inside the sandbox but starts empty except for explicitly exposed/copied subpaths. Phase rejects any read/copy allowlist that would also expose a protected evaluator asset.
 
 The report makes the boundary explicit and records:
 
@@ -363,6 +426,7 @@ The SLM learns repository behavior, not code synthesis. Cloud coding models rema
 
 ```text
 phase init <config.json> [repo]
+phase agents
 phase run <config.json>
 phase report <result.json> [out.html]
 phase export <result.json> [--private]
@@ -370,20 +434,23 @@ phase ui [runs-dir] [--port 4317]
 phase dataset <runs-dir> <out-dir> [--portable]
 ```
 
-Legacy research/SLM scripts remain in the repository for reproducibility, but v0.5's supported product surface is the `phase` CLI plus the optional Pi extension.
+Legacy research/SLM scripts remain for reproducibility. v0.7's supported product surface is the `phase` CLI, the universal worker-adapter layer, and the optional Pi extension.
 
 ---
 
 ## Current validation
 
-v0.5 passes **20/20 source tests**, including:
+v0.7 passes **29/29 source tests**, including:
 
-- hidden evaluator absent during worker execution,
-- delayed hidden asset materialization,
-- memory/index freeze during hidden validation,
-- automatic visual report generation,
-- behavior-only training export,
-- aggregate corpus building,
+- OS-isolated hidden evaluator execution,
+- delayed hidden asset materialization and memory/index freeze,
+- cross-repository provenance-domain rejection,
+- generic stdin and argv agent adapters,
+- shell-injection-resistant argv prompt transport,
+- external JSON adapter manifests,
+- built-in adapter discovery,
+- writable ephemeral auth/config copies that leave host credentials unchanged,
+- automatic visual report and behavior-only training export,
 - cloud-worker repair/retry,
 - repository-scoped memory retrieval,
 - action/observation tamper detection,

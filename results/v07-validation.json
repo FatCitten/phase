@@ -1,0 +1,15 @@
+{
+  "version": "0.7.0",
+  "tests": {"passed": 29, "failed": 0},
+  "features": [
+    "automatic known-agent discovery",
+    "generic argv/stdin worker adapters",
+    "external JSON adapter manifests",
+    "built-in Pi/Codex/Claude Code/Gemini CLI/OpenCode/Aider profiles",
+    "OS-isolated generic argv workers",
+    "ephemeral writable agent auth/config copies",
+    "host credential state remains unchanged",
+    "hidden evaluator fail-closed isolation",
+    "repository provenance domains"
+  ]
+}
