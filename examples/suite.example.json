@@ -1,0 +1,9 @@
+{
+  "id": "abyss-longitudinal",
+  "cwd": "/absolute/path/to/ABYSS",
+  "tasks": [
+    "/outside/ABYSS/task-001.json",
+    "/outside/ABYSS/task-002.json"
+  ],
+  "stop_on_failure": true
+}

@@ -1,0 +1,85 @@
+{
+  "kind": "synthetic capacity smoke benchmark",
+  "note": "Not a coding-task quality benchmark. It stresses exact structural cue retrieval under growing superposition load.",
+  "generatedAt": "2026-09-19T05:06:49.441Z",
+  "parameters": {
+    "cues": 0,
+    "populatedBuckets": 0,
+    "dim": 49152,
+    "moduli": [
+      8,
+      9,
+      5,
+      7,
+      11,
+      13
+    ],
+    "reps": 8192,
+    "bucketCount": 512,
+    "maxClaimsPerBucket": 32,
+    "fixedVectorBytes": 786432,
+    "minConfidence": 0.45,
+    "noiseFloor": 0,
+    "effectiveGate": 0.45,
+    "knownUnknownMargin": 0.45,
+    "path": null
+  },
+  "rows": [
+    {
+      "claims": 100,
+      "cues": 402,
+      "fixedVectorBytes": 786432,
+      "buildMs": 1136.9446810000002,
+      "queryMsPer": 1.1263293399999998,
+      "candidateRecall": 1,
+      "boundedRerankAccuracy": 1,
+      "noiseFloor": 0.2263791705915701,
+      "effectiveGate": 0.45,
+      "unknownConfidence": 0.2173281770343604,
+      "unknownHit": false,
+      "hybridWouldDegrade": false
+    },
+    {
+      "claims": 300,
+      "cues": 1202,
+      "fixedVectorBytes": 786432,
+      "buildMs": 3280.761646,
+      "queryMsPer": 3.5178684499999964,
+      "candidateRecall": 1,
+      "boundedRerankAccuracy": 0.99,
+      "noiseFloor": 0.43289465452254156,
+      "effectiveGate": 0.5528946545225415,
+      "unknownConfidence": 0.35573219217912394,
+      "unknownHit": false,
+      "hybridWouldDegrade": false
+    },
+    {
+      "claims": 500,
+      "cues": 2002,
+      "fixedVectorBytes": 786432,
+      "buildMs": 4338.422144,
+      "queryMsPer": 4.23114610999999,
+      "candidateRecall": 1,
+      "boundedRerankAccuracy": 1,
+      "noiseFloor": 0.49935325312144757,
+      "effectiveGate": 0.6193532531214476,
+      "unknownConfidence": 0.5373326288135324,
+      "unknownHit": false,
+      "hybridWouldDegrade": false
+    },
+    {
+      "claims": 1000,
+      "cues": 4002,
+      "fixedVectorBytes": 786432,
+      "buildMs": 9193.509713,
+      "queryMsPer": 4.799216100000012,
+      "candidateRecall": 0.88,
+      "boundedRerankAccuracy": 0.88,
+      "noiseFloor": 0.7630919929772814,
+      "effectiveGate": 0.8830919929772814,
+      "unknownConfidence": 0.4168736620856346,
+      "unknownHit": false,
+      "hybridWouldDegrade": true
+    }
+  ]
+}

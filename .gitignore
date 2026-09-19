@@ -1,0 +1,5 @@
+node_modules/
+.phase/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm

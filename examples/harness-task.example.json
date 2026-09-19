@@ -1,0 +1,45 @@
+{
+  "id": "auth-refresh-017",
+  "cwd": "/home/me/project",
+  "task": "Fix the refresh-token regression without changing normal login behavior.",
+  "worker": {
+    "adapter": "pi"
+  },
+  "verify": {
+    "public": [
+      "npm test",
+      "npm run lint"
+    ],
+    "hidden": [
+      "node tests/.phase-hidden-auth.js"
+    ]
+  },
+  "hidden": {
+    "install": [
+      {
+        "from": "/home/me/evaluators/auth-hidden.js",
+        "to": "tests/.phase-hidden-auth.js"
+      }
+    ],
+    "paths": [
+      "tests/.phase-hidden-auth.js"
+    ]
+  },
+  "governor": {
+    "policy": "heuristic",
+    "max_steps": 12,
+    "max_repairs": 2
+  },
+  "training": {
+    "enabled": true,
+    "export_full_private_trace": false
+  },
+  "report": {
+    "enabled": true,
+    "title": "Auth refresh regression"
+  },
+  "tags": [
+    "bugfix",
+    "auth"
+  ]
+}

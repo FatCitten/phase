@@ -1,0 +1,70 @@
+{
+  "schema": "phase-controlled-cpu-distillation-v1",
+  "date": "2026-09-19",
+  "scope": "controlled synthetic coding benchmark; tests policy distillation + external memory, not Qwen/FunctionGemma capability",
+  "teacher_corpus": {
+    "validated_tasks": 12,
+    "accepted_actions": 48,
+    "actions_per_task": 4
+  },
+  "proxy_model": {
+    "train_examples": 48,
+    "heldout_action_examples": 80,
+    "parameters": 84228,
+    "epochs": 13,
+    "base_random_action_accuracy": 0.5,
+    "train_action_accuracy": 1.0,
+    "heldout_action_accuracy": 1.0,
+    "cpu_inference_ms": 0.5773720799999182
+  },
+  "heldout_with_phase": {
+    "random_base": {
+      "tasks": 8,
+      "passed": 8,
+      "pass_rate": 1.0,
+      "avg_steps": 7,
+      "avg_model_calls": 7,
+      "avg_prompt_tokens": 43,
+      "avg_completion_tokens": 70,
+      "avg_model_http_latency_ms": 70.86253299999998,
+      "avg_student_wall_ms": 1509.6476175,
+      "tool_errors": 0
+    },
+    "distilled_policy": {
+      "tasks": 8,
+      "passed": 8,
+      "pass_rate": 1.0,
+      "avg_steps": 4,
+      "avg_model_calls": 4,
+      "avg_prompt_tokens": 19,
+      "avg_completion_tokens": 40,
+      "avg_model_http_latency_ms": 51.606359624999996,
+      "avg_student_wall_ms": 774.71987625,
+      "tool_errors": 0
+    }
+  },
+  "heldout_without_phase": {
+    "distilled_policy": {
+      "tasks": 8,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "avg_steps": 4,
+      "avg_model_calls": 4,
+      "avg_prompt_tokens": 19,
+      "avg_completion_tokens": 40,
+      "avg_model_http_latency_ms": 46.70200637500002,
+      "avg_student_wall_ms": 667.68551375,
+      "tool_errors": 16
+    }
+  },
+  "observed_bugs_fixed": [
+    "repository-scoped retrieval after phase candidate generation",
+    "per-step Phase memory context persisted into Forge examples"
+  ],
+  "conclusion": {
+    "accuracy_regression": false,
+    "distilled_step_reduction": 3,
+    "distilled_wall_reduction_fraction": 0.48682072076333405,
+    "memory_ablation_pass_rate": 0.0
+  }
+}

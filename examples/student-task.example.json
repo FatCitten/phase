@@ -1,0 +1,19 @@
+{
+  "id": "student-example-001",
+  "cwd": "/absolute/path/to/repo",
+  "prompt": "Fix the stamina bug and run the public tests.",
+  "model_url": "http://127.0.0.1:8080/v1",
+  "model": "phase-student",
+  "protocol": "json-action",
+  "max_steps": 40,
+  "hidden_paths": [".hidden-tests"],
+  "hidden_copies": [
+    {
+      "from": "/outside/repo/stamina_hidden.py",
+      "to": ".hidden-tests/stamina_hidden.py"
+    }
+  ],
+  "validation_commands": [
+    ["python", ".hidden-tests/stamina_hidden.py"]
+  ]
+}
