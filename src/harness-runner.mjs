@@ -10,6 +10,8 @@ import { workerAdapterSummary } from './adapters.mjs';
 import { writeRunReport } from './run-report.mjs';
 import { exportRunTrainingData } from './training-export.mjs';
 import { buildIsolationPlan, probeWorkerIsolation } from './worker-isolation.mjs';
+import { PhaseCloudClient, aggregateRunResult, aggregateStep, taskFingerprint } from './cloud-sync.mjs';
+import { repositoryDomainId } from './util.mjs';
 
 function hash(path){const h=createHash('sha256');h.update(readFileSync(path));return h.digest('hex');}
 function cmdLabel(c,i,scope){return `${scope} ${i+1}: ${Array.isArray(c)?c.join(' '):String(c)}`;}
@@ -35,9 +37,12 @@ export async function runHarness(configPath, { onStep = null } = {}) {
   process.env.PHASE_INDEX_PATH=indexPath;
   const publicShell=publicValidationShell(cfg);if(publicShell)process.env.PHASE_VALIDATE_COMMAND=publicShell;else delete process.env.PHASE_VALIDATE_COMMAND;
   const started=performance.now();
+  const cloud=new PhaseCloudClient(cfg.cloud,{runId:cfg.id,repositoryId:repositoryDomainId(cfg.cwd),clientVersion:'0.8.0'});
+  await cloud.connect();
+  await cloud.emit('run.started',{runId:cfg.id,tags:cfg.tags,task:cfg.cloud.telemetry==='trace'?cfg.task:undefined,taskFingerprint:taskFingerprint(cfg.task),worker:workerAdapterSummary(cfg.worker),policy:cfg.policy},{workerAdapter:cfg.worker.id,policy:cfg.policy});
   let controller;
   try {
-    controller=await runRepoController({cwd:cfg.cwd,task:cfg.task,dbPath,workerAdapter:cfg.worker,cloudCommand:cfg.worker.command,policy:cfg.policy,maxSteps:cfg.maxSteps,maxRepairs:cfg.maxRepairs,workerEnv:cfg.worker.env,workerIsolation:{enabled:cfg.isolationEnabled,required:cfg.isolationRequired,readPaths:cfg.isolationReadPaths,copyPaths:cfg.isolationCopyPaths,protectedPaths:isolationProtected},onStep});
+    controller=await runRepoController({cwd:cfg.cwd,task:cfg.task,dbPath,workerAdapter:cfg.worker,cloudCommand:cfg.worker.command,policy:cfg.policy,maxSteps:cfg.maxSteps,maxRepairs:cfg.maxRepairs,workerEnv:cfg.worker.env,workerIsolation:{enabled:cfg.isolationEnabled,required:cfg.isolationRequired,readPaths:cfg.isolationReadPaths,copyPaths:cfg.isolationCopyPaths,protectedPaths:isolationProtected},onStep:async(step)=>{await cloud.emit('controller.step',cfg.cloud.telemetry==='trace'?step:aggregateStep(step),aggregateStep(step));if(onStep)await onStep(step);}});
   } finally {
     if(oldIndex==null)delete process.env.PHASE_INDEX_PATH;else process.env.PHASE_INDEX_PATH=oldIndex;
     if(oldValidate==null)delete process.env.PHASE_VALIDATE_COMMAND;else process.env.PHASE_VALIDATE_COMMAND=oldValidate;
@@ -73,6 +78,10 @@ export async function runHarness(configPath, { onStep = null } = {}) {
   const hiddenPass=hiddenValidation.length===cfg.hiddenCommands.length&&hiddenValidation.every(x=>x.status===0);
   const passed=Boolean(controller.success&&publicPass&&audit.passed&&brainFrozen&&hiddenPass);
   const result={schema:'phase-harness-run-v1',runId:cfg.id,task:cfg.task,cwd:cfg.cwd,tags:cfg.tags,worker:workerAdapterSummary(cfg.worker),policy:cfg.policy,brainDb:dbPath,phaseIndex:indexPath,controller,publicValidation,hiddenValidation,ledgerHeadBeforeHidden,audit,firewall:{configOutsideWorktree:!(cfg.configPath===cfg.cwd||cfg.configPath.startsWith(`${cfg.cwd}/`)),hiddenAssetsInstalled:cfg.hiddenCopies.length,hiddenCommands:cfg.hiddenCommands.length,brainFrozen,auditPassed:audit.passed,osIsolation:{enabled:cfg.isolationEnabled,required:cfg.isolationRequired,available:isolationPreflight.available,backend:isolationPreflight.backend,failClosed:cfg.isolationRequired}},wallTimeMs:performance.now()-started,passed};
+  await cloud.emit('run.completed',cfg.cloud.telemetry==='trace'?result:aggregateRunResult(result),aggregateRunResult(result));
+  const cloudSummary=cloud.summary();
+  await cloud.close();
+  result.cloud=cloudSummary;
   const resultPath=join(runDir,'result.json');writeFileSync(resultPath,JSON.stringify(result,null,2));
   let training=null;if(cfg.trainingEnabled)training=exportRunTrainingData({runResult:result,runDir,includePrivate:cfg.exportFullTrace});
   const reportPath=join(runDir,'report.html');if(cfg.reportEnabled)writeRunReport({...result,training},reportPath,{title:cfg.reportTitle});

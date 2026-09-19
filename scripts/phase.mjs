@@ -7,8 +7,9 @@ import { startDashboard } from '../src/dashboard-server.mjs';
 import { exportRunTrainingData } from '../src/training-export.mjs';
 import { buildDataset } from '../src/dataset.mjs';
 import { detectAvailableAdapters } from '../src/adapters.mjs';
+import { startPhaseCloudServer } from '../src/cloud-server.mjs';
 
-function usage(){console.log(`Phase v0.7\n\n  phase init <config.json> [repo]\n  phase agents\n  phase run <config.json>\n  phase report <result.json> [out.html]\n  phase export <result.json> [--private]\n  phase ui [runs-dir] [--port 4317]\n  phase dataset <runs-dir> <out-dir> [--portable]\n`)}
+function usage(){console.log(`Phase v0.8\n\n  phase init <config.json> [repo]\n  phase agents\n  phase run <config.json>\n  phase report <result.json> [out.html]\n  phase export <result.json> [--private]\n  phase ui [runs-dir] [--port 4317]\n  phase dataset <runs-dir> <out-dir> [--portable]\n  phase cloud:dev [port]\n`)}
 function template(cwd){return{id:'fix-example',cwd,task:'Describe the coding task here',worker:{adapter:'auto'},verify:{public:['npm test'],hidden:['npm test -- --runInBand']},hidden:{install:[{from:'/absolute/operator-only/hidden.test.js',to:'tests/.phase-hidden.test.js'}],paths:['tests/.phase-hidden.test.js']},isolation:{enabled:true,required:true,read:[]},governor:{policy:'heuristic',max_repairs:2},training:{enabled:true,export_full_private_trace:false},report:{enabled:true,title:'Phase coding run'}};}
 const [cmd,...args]=process.argv.slice(2);if(!cmd){usage();process.exit(64)}
 if(cmd==='init'){const out=resolve(args[0]??'../phase-task.json');const cwd=resolve(args[1]??'.');mkdirSync(dirname(out),{recursive:true});writeFileSync(out,JSON.stringify(template(cwd),null,2));console.log(`Wrote ${out}\nKeep this operator config outside the agent worktree.`);}
@@ -18,4 +19,5 @@ else if(cmd==='report'){const p=resolve(args[0]??'');if(!existsSync(p))throw new
 else if(cmd==='export'){const p=resolve(args[0]??'');if(!existsSync(p))throw new Error('result.json not found');const x=JSON.parse(readFileSync(p,'utf8'));const m=exportRunTrainingData({runResult:x,runDir:dirname(p),includePrivate:args.includes('--private')});console.log(JSON.stringify(m,null,2));}
 else if(cmd==='dataset'){const runs=resolve(args[0]??'.phase/runs');const out=resolve(args[1]??'phase-dataset');const m=buildDataset({runsDir:runs,outDir:out,portable:args.includes('--portable')});console.log(JSON.stringify(m,null,2));}
 else if(cmd==='ui'){const p=args.find(x=>!x.startsWith('--'))??resolve('.phase','runs');const pi=args.indexOf('--port');const port=pi>=0?Number(args[pi+1]):4317;const d=startDashboard({runsDir:p,port});console.log(`Phase UI ${d.url}\nRuns: ${d.runsDir}`);}
+else if(cmd==='cloud:dev'){const port=Number(args[0]??process.env.PHASE_CLOUD_PORT??8787);const key=process.env.PHASE_CLOUD_DEV_KEY??'phase-dev-key';const d=await startPhaseCloudServer({host:'127.0.0.1',port,apiKeys:{[key]:{account:'dev',premium:true}},privateLog:resolve('.phase/cloud/private.ndjson'),productLog:resolve('.phase/cloud/product.ndjson')});console.log(`Phase Cloud dev server ${d.url}\nAPI key: ${key}\nPrivate: ${resolve('.phase/cloud/private.ndjson')}\nProduct: ${resolve('.phase/cloud/product.ndjson')}`);}
 else{usage();process.exit(64)}

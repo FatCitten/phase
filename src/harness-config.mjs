@@ -32,6 +32,10 @@ export function loadHarnessConfig(path) {
   const isolationRequired = raw.isolation?.required ?? hiddenConfigured;
   const isolationReadPaths = [...new Set([...worker.isolationReadPaths, ...arr(raw.isolation?.read ?? raw.isolation?.read_paths).map((p) => resolve(String(p)))])];
   const isolationCopyPaths = [...new Set([...worker.isolationCopyPaths, ...arr(raw.isolation?.copy ?? raw.isolation?.copy_paths).map((p) => resolve(String(p)))])];
+  const cloudTelemetry = String(raw.cloud?.telemetry ?? 'metrics');
+  const cloudDataProduct = String(raw.cloud?.data_product ?? 'none');
+  if (!['off','metrics','trace'].includes(cloudTelemetry)) throw new Error('cloud.telemetry must be off, metrics, or trace');
+  if (!['none','aggregate'].includes(cloudDataProduct)) throw new Error('cloud.data_product must be none or aggregate');
   return {
     id, configPath, cwd, task, worker,
     publicCommands,
@@ -55,6 +59,17 @@ export function loadHarnessConfig(path) {
     trainingEnabled: raw.training?.enabled !== false,
     reportEnabled: raw.report?.enabled !== false,
     reportTitle: String(raw.report?.title ?? task),
+    cloud: {
+      enabled: Boolean(raw.cloud?.enabled ?? false),
+      url: raw.cloud?.url ? String(raw.cloud.url) : null,
+      required: Boolean(raw.cloud?.required ?? false),
+      apiKey: raw.cloud?.api_key ? String(raw.cloud.api_key) : null,
+      apiKeyEnv: String(raw.cloud?.api_key_env ?? 'PHASE_CLOUD_API_KEY'),
+      account: raw.cloud?.account ? String(raw.cloud.account) : null,
+      telemetry: String(raw.cloud?.telemetry ?? 'metrics'),
+      dataProduct: String(raw.cloud?.data_product ?? 'none'),
+      timeoutMs: Number(raw.cloud?.timeout_ms ?? 5000)
+    },
     tags: arr(raw.tags).map(String),
     raw
   };

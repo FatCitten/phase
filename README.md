@@ -1,4 +1,4 @@
-# Phase Harness v0.7
+# Phase Harness v0.8
 
 **Make coding agents observable, testable, replayable, and training-ready without building a harness.**
 
@@ -82,6 +82,39 @@ phase dataset .phase/runs ./phase-dataset
 phase dataset .phase/runs ./phase-dataset-portable --portable
 ```
 
+### Premium cloud sync
+
+Phase can stream the same governed run to a premium cloud over WebSocket while local execution remains authoritative:
+
+```json
+{
+  "cloud": {
+    "enabled": true,
+    "url": "wss://cloud.example.com/v1/runs",
+    "api_key_env": "PHASE_CLOUD_API_KEY",
+    "telemetry": "metrics",
+    "data_product": "aggregate",
+    "required": false
+  }
+}
+```
+
+`telemetry` controls the customer's private cloud stream. `data_product` is a separate consent flag for a reduced commercial benchmark stream; it defaults to `none`. Aggregate product records exclude task text, cwd, code, patches, raw outputs, account identity, and repository IDs. See `PHASE-CLOUD.md`.
+
+Run the reference server locally with:
+
+```bash
+phase cloud:dev 8787
+```
+
+### Reproducible WebGPU benchmark
+
+```bash
+npm run bench:webgpu
+```
+
+The benchmark compares a direct one-shot worker with the same worker under Phase while building a WebGPU raycast hack-and-slash. The included worker is intentionally deterministic/fallible, so the benchmark verifies Phase's validation/repair machinery rather than claiming a general LLM-quality improvement.
+
 ---
 
 ## Harness config
@@ -140,7 +173,7 @@ The config is intentionally small. Keep it **outside the worker repository** so 
 
 ### Workers
 
-Phase v0.7 uses a harness-agnostic adapter contract. See what is installed:
+Phase v0.8 uses a harness-agnostic adapter contract. See what is installed:
 
 ```bash
 phase agents
