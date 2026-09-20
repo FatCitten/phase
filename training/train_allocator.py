@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Train the Phase TPM allocator on architecture seeds + measured fiber outcomes.
 
-The target is allocation JSON only. Project source, patches, and canonical project facts
+The target is Phase allocation assembly only. Project source, patches, and canonical project facts
 must not be targets; those remain external Phase state.
 """
 from __future__ import annotations
@@ -38,6 +38,6 @@ def main():
     cfg=SFTConfig(output_dir=str(args.output),max_length=args.max_length,packing=False,num_train_epochs=args.epochs,per_device_train_batch_size=2,per_device_eval_batch_size=2,gradient_accumulation_steps=4,learning_rate=args.lr,logging_steps=5,eval_strategy='epoch',save_strategy='epoch',report_to=[],bf16=dtype==torch.bfloat16,fp16=dtype==torch.float16)
     trainer=SFTTrainer(model=model,args=cfg,train_dataset=split['train'],eval_dataset=split['test'],processing_class=tok,peft_config=peft)
     trainer.train();trainer.save_model(str(args.output));tok.save_pretrained(str(args.output))
-    manifest={'schema':'phase-tpm-training-v1','base_model':args.base_model,'dataset':str(path),'dataset_sha256':digest(path),'examples':len(ds),'target':'resource allocation JSON only; never project truth or code','lora':True}
+    manifest={'schema':'phase-tpm-training-v1','base_model':args.base_model,'dataset':str(path),'dataset_sha256':digest(path),'examples':len(ds),'target':'Phase allocation assembly only; never project truth or code','lora':True}
     (args.output/'phase-tpm-training-manifest.json').write_text(json.dumps(manifest,indent=2));print(json.dumps(manifest,indent=2))
 if __name__=='__main__':main()

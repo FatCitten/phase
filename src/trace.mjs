@@ -1,0 +1,11 @@
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { PHASE_HEADER_BYTES, PHASE_RECORD_BYTES, STREAM, formatPacket } from './isa.mjs';
+import { readPhaseBin } from './phasebin.mjs';
+
+export function loadSymbols(runDir){const out={};const p=join(resolve(runDir),'symbols.ndjson');for(const line of readFileSync(p,'utf8').split(/\r?\n/).filter(Boolean)){const x=JSON.parse(line);(out[x.kind]??={})[String(x.id)]=x.label;}return out;}
+export function streamName(n){return Number(n)===STREAM.CONTROL?'CTRL':Number(n)===STREAM.SIGNAL?'SIG':Number(n)===STREAM.STATE?'STATE':`S${n}`;}
+export function readRunTrace(runDir){runDir=resolve(runDir);const symbols=loadSymbols(runDir);const files=[['control.phasebin',STREAM.CONTROL],['signals.phasebin',STREAM.SIGNAL],['state.phasebin',STREAM.STATE]];const rows=[];for(const [file,stream] of files){const p=readPhaseBin(join(runDir,file));for(const packet of p.packets)rows.push({stream,packet,file});}rows.sort((x,y)=>x.packet.mono_ms-y.packet.mono_ms||x.stream-y.stream||x.packet.seq-y.packet.seq);return{symbols,rows};}
+export function disassembleRun(runDir,{includeState=false}={}){const {symbols,rows}=readRunTrace(runDir);return rows.filter(x=>includeState||x.stream!==STREAM.STATE).map(x=>`${streamName(x.stream).padEnd(5)} ${formatPacket(x.packet,{symbols})}`);}
+export function rawHex(path){const buf=readFileSync(path);const lines=[];for(let o=0;o<buf.length;o+=16){const c=buf.subarray(o,o+16);lines.push(`${o.toString(16).padStart(8,'0')}  ${[...c].map(x=>x.toString(16).padStart(2,'0')).join(' ').padEnd(47)}  ${[...c].map(x=>x>=32&&x<127?String.fromCharCode(x):'.').join('')}`);}return lines;}
+export function replaySummary(runDir){const {symbols,rows}=readRunTrace(runDir);const fibers={};for(const r of rows){const f=r.packet.fiber;if(!f)continue;const x=fibers[f]??={fiber:symbols.fiber?.[String(f)]??`F${f}`,instructions:0,signals:0,first_ms:r.packet.mono_ms,last_ms:r.packet.mono_ms};r.stream===STREAM.CONTROL?x.instructions++:r.stream===STREAM.SIGNAL?x.signals++:0;x.last_ms=Math.max(x.last_ms,r.packet.mono_ms);fibers[f]=x;}return{schema:'phase-replay-summary-v1',fibers:Object.values(fibers),records:rows.length,duration_ms:rows.length?Math.max(...rows.map(x=>x.packet.mono_ms)):0};}

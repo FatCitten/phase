@@ -11,7 +11,10 @@
     "stop or re-route when marginal validated progress collapses",
     "ask the human only when evidence cannot resolve an opinionated decision",
     "separate repository domains in state and training features",
-    "reserve capacity for repair and integration rather than spending the full budget up front"
+    "reserve capacity for repair and integration rather than spending the full budget up front",
+    "canonical research data is measurement, never interpretation or scalar reward",
+    "unobserved measurements remain null; never coerce missing signals to zero",
+    "the allocator emits bounded Phase ISA decisions; the VM enforces ceilings"
   ],
   "resources": [
     "tokens",
@@ -23,13 +26,15 @@
     "parallel_slots"
   ],
   "outputs": [
-    "route",
-    "budget",
-    "tools",
-    "split",
-    "stop",
-    "escalate",
-    "next"
+    "FORK",
+    "ROUTE",
+    "ALLOC",
+    "GRANT",
+    "MAPCTX",
+    "RUN",
+    "GATE",
+    "RELEASE",
+    "HALT"
   ],
   "fiber_lifecycle": [
     "queued",
@@ -47,7 +52,8 @@
     "initial_context_fraction": 0.55,
     "validation_fraction": 0.1,
     "max_parallelism_without_evidence": 2,
-    "human_attention_cost_multiplier": 100
+    "human_attention_cost_multiplier": 100,
+    "canonical_packet_bytes": 32
   },
-  "sha256": "240ba2d1012b7507c396732a6b04efe2ca454e2e58a5be7d5494999b595763d0"
+  "sha256": "9770d77e33ac53b62d2bedf3f88dd58b5b8165fa6b139655c6e8323e7442aab7"
 }

@@ -1,0 +1,7 @@
+cff-version: 1.2.0
+title: "Phase: SLM OS for Cognitive Resource Allocation"
+message: "If Phase contributes to published research, cite the software release and the exact corpus manifest hashes used in the experiment."
+type: software
+version: 1.0.0
+license: MIT
+date-released: 2026-09-19

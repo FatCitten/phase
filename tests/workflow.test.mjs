@@ -10,7 +10,7 @@ import { encodeAllocationState, cosine } from '../src/phase-features.mjs';
 import { PhaseAllocator } from '../src/allocator.mjs';
 import { runWorkflow } from '../src/fiber-runtime.mjs';
 import { FiberRenderer } from '../src/fiber-ui.mjs';
-import { summarizeExperiment, verifyResearchEventLog } from '../src/research.mjs';
+import { summarizeExperiment, verifyResearchEventLog, verifyResearchRun } from '../src/research.mjs';
 import { compileWorkflowDescription } from '../src/workflow-compiler.mjs';
 import { computeFiberSignals, defaultAllocationObjective } from '../src/signals.mjs';
 
@@ -18,7 +18,7 @@ test('architecture seed is stable and contains allocation rather than project fa
   assert.equal(PHASE_ARCHITECTURE_SEED.schema,'phase-allocator-seed-v1');
   assert.equal(seedHash().length,64);assert.ok(seedExamples().length>=4);
   assert.ok(PHASE_ARCHITECTURE_SEED.resources.includes('context_tokens'));
-  assert.ok(PHASE_ARCHITECTURE_SEED.outputs.includes('route'));
+  assert.ok(PHASE_ARCHITECTURE_SEED.outputs.includes('ROUTE'));
 });
 
 test('workflow IR normalizes fibers and allocator emits bounded structured allocations',async()=>{
@@ -62,7 +62,7 @@ test('workflow runtime executes an arbitrary agent fiber and emits research arti
   const agent=join(root,'scripts','fake-agent.mjs');writeFileSync(agent,"import {writeFileSync} from 'node:fs'; process.stdin.resume(); let s=''; process.stdin.on('data',c=>s+=c); process.stdin.on('end',()=>{writeFileSync('done.txt',s.includes('FIBER F1')?'ok':'bad'); console.log('done')});");
   const wf=normalizeWorkflow({cwd:root,objective:'finish marker',isolation:{enabled:false},fibers:[{id:'F1',objective:'write done marker',agent:{adapter:'exec',argv:[process.execPath,agent],prompt:'stdin'},validation:["test \"$(cat done.txt)\" = ok"]}]});
   const r=await runWorkflow(wf,{renderer:new FiberRenderer({enabled:false})});assert.equal(r.passed,true);assert.equal(readFileSync(join(root,'done.txt'),'utf8'),'ok');
-  const manifest=JSON.parse(readFileSync(join(r.run_dir,'manifest.json'),'utf8'));const result=JSON.parse(readFileSync(join(r.run_dir,'result.json'),'utf8'));assert.equal(manifest.schema,'phase-experiment-v1');assert.equal(result.summary.passed,true);assert.ok(readFileSync(join(r.run_dir,'events.ndjson'),'utf8').includes('fiber.allocated'));assert.equal(verifyResearchEventLog(join(r.run_dir,'events.ndjson')).passed,true);
+  const manifest=JSON.parse(readFileSync(join(r.run_dir,'manifest.json'),'utf8'));const result=JSON.parse(readFileSync(join(r.run_dir,'result.json'),'utf8'));assert.equal(manifest.schema,'phase-research-run-v2');assert.equal(result.passed,true);assert.ok(readFileSync(join(r.run_dir,'events.ndjson'),'utf8').includes('fiber.allocated'));assert.equal(verifyResearchEventLog(join(r.run_dir,'events.ndjson')).passed,true);assert.equal(verifyResearchRun(r.run_dir).passed,true);for(const f of ['control.phasebin','signals.phasebin','state.phasebin','SEALED'])assert.ok(readFileSync(join(r.run_dir,f)).length>0);
 });
 
 
@@ -75,4 +75,10 @@ test('natural-language workflow compiler can use any exec-style LLM adapter',asy
 });
 test('research summary reports pass rate with confidence interval',()=>{
   const s=summarizeExperiment([{passed:true,wall_ms:10},{passed:false,wall_ms:30},{passed:true,wall_ms:20}]);assert.equal(s.n,3);assert.equal(s.success,2);assert.ok(s.pass_rate_95ci.low<s.pass_rate&&s.pass_rate_95ci.high>s.pass_rate);
+});
+
+test('allocator accepts Phase assembly and clamps it to declared capabilities',async()=>{
+  const { parseAllocatorAssembly } = await import('../src/allocator.mjs');
+  const x=parseAllocatorAssembly('ROUTE codex\nALLOC CONTEXT_TOKENS 8192\nALLOC WALL_MS 120000\nGRANT read\nGRANT test');
+  assert.equal(x.agent,'codex');assert.equal(x.context_tokens,8192);assert.equal(x.wall_ms,120000);assert.deepEqual(x.tools,['read','test']);
 });

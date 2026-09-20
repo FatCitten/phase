@@ -1,255 +1,163 @@
-# Phase v0.9
+# Phase 1.0
 
-**Describe the workflow. Phase learns how to allocate cognition.**
+**Phase treats agentic work as resource flow.**
 
-Phase is now a provider-neutral workflow runtime. A capable LLM can compile human intent into a small workflow graph; Phase turns that graph into **fibers** and allocates agents, context, tools, time, and budget to each fiber. A tiny Phase TPM/allocator model can then be trained from measured outcomes instead of being trained to write code or memorize project truth.
+A project can be much larger than any model's context window. Phase compiles a human workflow into temporary **fibers**, allocates agents/context/tools/time to those fibers, and records the resulting execution as a small machine-readable instruction and signal stream. A tiny TPM/allocator model can then learn how to spend expensive intelligence from measured outcomes instead of learning project facts.
 
 ```text
-human description
-      │
-      ▼
+human workflow
+     │
+     ▼
 workflow compiler LLM
-      │
-      ▼
- Phase Workflow IR
-      │
-      ▼
-Phase TPM allocator  ◄── baked architecture seed
-      │
- ┌────┼────┐
- ▼    ▼    ▼
+     │
+     ▼
+Phase Workflow IR
+     │
+     ▼
+TPM allocator SLM ─── Phase architecture seed
+     │
+     ▼
+Phase ISA
+     │
+ ┌───┼────┐
+ ▼   ▼    ▼
 fiber fiber fiber
- │     │     │
+ │    │    │
 agent agent agent
- │     │     │
- └─────┼─────┘
-       ▼
-measured outcomes
-       │
-       ▼
-allocator dataset / JIT LoRA
+ └────┼────┘
+      ▼
+state / control / signal buses
+      ▼
+sealed research corpus
 ```
 
-A fiber is a temporary allocation of cognition, not an agent personality. The CLI treats fibers like real progress units:
+## What is canonical
+
+Phase 1.0 makes a hard distinction between **measurement** and **interpretation**.
+
+Each completed run is sealed with hashes and contains:
 
 ```text
-⠸ F1       █████████████░░░░░░░░░░░  55%  renderer       codex working
-✓ F2       ████████████████████████ 100%  schema tests    validated
-⠸ F3       ████░░░░░░░░░░░░░░░░░░░  18%  combat         8192ctx
+workflow.json       exact workflow input
+symbols.ndjson      symbol dictionary
+state.phasebin      allocator input state
+control.phasebin    allocations and execution instructions
+signals.phasebin    measured outcomes
+manifest.json       hashes + run metadata
+SEALED              manifest digest
+events.ndjson       derived human-readable event view
+result.json         derived summary
 ```
 
-The percentage is lifecycle progress (queued → allocated → context → running → validating → done), not a fabricated estimate of coding completion.
+The three `.phasebin` buses use fixed-width 32-byte records with per-record CRC32. The run manifest SHA-256 seals every canonical file. Training examples are reconstructed from those buses; event prose and scalar rewards are never required.
 
-## Start with a workflow
+**Missing telemetry stays missing.** An unobserved token count/context miss/retry is `null`, not a fabricated zero.
 
-Requires Node.js 22+.
+## Install
+
+Requires Node.js 22.19+.
 
 ```bash
 npm install
 npm link
-
-phase workflow:init phase-workflow.json .
+phase --help
 ```
 
-Or let any supported agent compile a natural-language workflow into Phase IR:
+## Use
+
+Create a workflow:
 
 ```bash
-phase workflow:compile \
-  "Build a WebGPU game. Split rendering and combat into verifiable work. Ask me about subjective game feel." \
-  phase-workflow.json
+phase init phase-workflow.json .
 ```
 
-Then execute it:
+Or have an LLM compile a natural-language workflow:
 
 ```bash
-phase workflow:run phase-workflow.json
+phase compile "Build the project, split independently verifiable work, and return subjective decisions to me"
 ```
 
-The same adapter layer supports Pi, Codex CLI, Claude Code, Gemini CLI, OpenCode, Aider, generic argv programs, and external JSON manifests:
+Run it:
 
 ```bash
-phase agents
+phase run phase-workflow.json
 ```
 
-## The allocator SLM
+Watch raw Phase instructions/signals in real time:
 
-Phase's local model is a **TPM / asset manager**, not a coder and not project memory.
+```bash
+phase run phase-workflow.json --raw
+```
 
-It receives constrained state and answers questions of the form:
+Inspect a sealed run:
 
-> How much resource, where, for which fiber, using which agent/tools, for how long, then what?
+```bash
+phase trace .phase/experiments/<run>
+phase trace .phase/experiments/<run> --state
+phase raw   .phase/experiments/<run> signals --hex
+phase verify .phase/experiments/<run>
+phase replay .phase/experiments/<run>
+```
 
-The baked prior lives in:
+Build a content-addressed corpus from sealed runs:
+
+```bash
+phase corpus .phase/experiments .phase/corpus
+phase verify .phase/corpus
+```
+
+Train the allocator view:
+
+```bash
+phase train .phase/experiments .phase/models/allocator
+```
+
+## Fibers
+
+A fiber is a temporary allocation of cognition, not an agent identity.
 
 ```text
-seeds/phase-allocator.seed.json
-seeds/phase-allocator.examples.jsonl
+⠸ F1       █████████████░░░░░░░░░░░  55%  renderer   codex working
+✓ F2       ████████████████████████ 100%  tests      validated
 ```
 
-Its core rules include:
+Progress is lifecycle state (`queued → allocated → context → running → validating → done`), not a fabricated estimate of coding completion.
 
-- human intent dominates allocator preference;
-- project facts come from evidence, never allocator weights;
-- allocate the smallest likely-sufficient resource budget;
-- increase allocation after measurable misses or failed validation, not generalized doubt;
-- split only when work is independently verifiable;
-- reserve capacity for repair and integration;
-- escalate subjective unresolved decisions to the human.
+## Phase ISA
 
-Every allocator experiment records the seed hash. Every compiled training dataset includes the seed examples. Model inference receives the same seed as its system prior.
+The allocator ultimately controls a tiny instruction vocabulary:
 
-### Deterministic control condition
-
-```json
-{
-  "allocator": {
-    "policy": "heuristic"
-  }
-}
+```asm
+FORK     F17
+ROUTE    F17, codex
+ALLOC    F17, CONTEXT_TOKENS, 8192
+ALLOC    F17, WALL_MS, 120000
+GRANT    F17, read
+GRANT    F17, edit
+RUN      F17
+GATE     F17, 3
+RELEASE  F17
 ```
 
-### Local SLM policy
+Fibers return genuine signal packets such as validation pass/fail, wall time, allocated context/tool budget, context misses when observable, retries when observable, and human requests when observable.
 
-Serve a trained Phase allocator behind an OpenAI-compatible endpoint:
+See [docs/isa.md](docs/isa.md) and [docs/data.md](docs/data.md).
 
-```json
-{
-  "allocator": {
-    "policy": "model",
-    "base_url": "http://127.0.0.1:8080/v1",
-    "model": "phase-tpm-allocator",
-    "required": false
-  }
-}
-```
+## Research question
 
-Phase clamps model output to the fiber's declared ceilings and allowed capabilities before execution. If the model endpoint fails, it can fall back to the deterministic allocator unless `required` is true.
+Phase does not attempt to make the coding model itself smarter. The core question is:
 
-## Workflow IR
+> Can a project teach a small allocator how to spend fixed pools of context, model calls, tools, time, money, and human attention more effectively than a static policy?
 
-Example:
+The intended comparison is always under matched resource pools: heuristic allocator vs learned allocator, measured by validated project progress and the raw resources actually observed.
 
-```json
-{
-  "schema": "phase-workflow-v1",
-  "id": "game",
-  "cwd": ".",
-  "objective": "Ship a small WebGPU hack-and-slash.",
-  "constraints": ["Use WebGPU directly"],
-  "decisions": ["Subjective game-feel choices return to the human"],
-  "defaults": {
-    "agent": "auto",
-    "budget": {
-      "tokens": 24000,
-      "context_tokens": 12000,
-      "wall_ms": 900000,
-      "tool_calls": 40
-    }
-  },
-  "fibers": [
-    {
-      "id": "F1",
-      "objective": "Build renderer and movement.",
-      "depends_on": [],
-      "tools": ["read", "edit", "test"],
-      "validation": ["npm test"]
-    },
-    {
-      "id": "F2",
-      "objective": "Add melee combat.",
-      "depends_on": ["F1"],
-      "tools": ["read", "edit", "test"],
-      "validation": ["npm test"]
-    }
-  ]
-}
-```
+## Design invariants
 
-`wall_ms` is enforced as the worker timeout. Context/token/tool-call budgets are first-class research/allocation fields; exact enforcement depends on the selected agent adapter. Generic third-party CLIs may only receive those values as allocation instructions until their adapter exposes hard resource controls.
+- Human intent and explicit constraints outrank allocator preference.
+- Project truth lives in current evidence, not TPM weights.
+- The allocator may suggest resource decisions; the runtime clamps them to declared capabilities and ceilings.
+- Canonical data records what happened, not what Phase wishes had happened.
+- Derived rewards/objectives are versioned transforms and may be replaced without rewriting raw runs.
+- Repository provenance and OS isolation remain hard boundaries underneath the allocator.
 
-## Project geometry
-
-Phase encodes allocator state into `phase-state-vector-v1` using deterministic signed feature hashing. Repository-domain anchors carry substantial vector mass, so otherwise similar tasks in unrelated repositories are strongly separated for scheduling/training purposes.
-
-This is **not** a security boundary. v0.6's hard repository provenance domains and OS isolation remain the security mechanisms.
-
-## Research-quality run artifacts
-
-Each workflow run writes:
-
-```text
-.phase/experiments/<run>/
-  manifest.json
-  events.ndjson
-  result.json
-```
-
-The manifest records protocol versions, workflow hash, architecture-seed hash, platform/runtime information, and git snapshot. Events form a SHA-256 hash chain. `result.json` records the event-chain head and full event-log digest.
-
-Verify an experiment:
-
-```bash
-phase research:verify .phase/experiments/<run>
-```
-
-Summarize repeated experiments:
-
-```bash
-phase research:summarize .phase/experiments
-```
-
-The summary includes sample count, pass rate, Wilson 95% confidence interval, and wall-time statistics.
-
-Compile allocator training data from measured runs:
-
-```bash
-phase allocator:dataset .phase/experiments .phase/allocator-dataset
-```
-
-The output combines the stable Phase architecture seeds with measured:
-
-```text
-state vector → allocation → outcome
-```
-
-examples.
-
-Phase stores raw `phase-genuine-signals-v1` measurements separately from the scalar experiment objective. Validation, worker completion, wall time, budget utilization, and allocation sizes remain inspectable even if you later change the reward function.
-
-## JIT allocator training
-
-With the Python training dependencies installed:
-
-```bash
-phase allocator:jit \
-  .phase/experiments \
-  .phase/allocator-dataset \
-  .phase/models/allocator
-```
-
-This trains a LoRA allocator with `training/train_allocator.py`. The target is allocation JSON only. Code, patches, and canonical project facts are deliberately outside the training target.
-
-## Agent skill
-
-A generic Phase skill is included at:
-
-```bash
-phase skill
-```
-
-It teaches an agent to behave as an execution fiber: follow the allocated objective, avoid private doctrine, ground claims in current evidence, and return only the concrete result/validation/blocker needed for another fiber to continue.
-
-## Compatibility layer
-
-The v0.5–v0.8 harness is still included and tested:
-
-- OS-level worker isolation;
-- repository-scoped provenance domains;
-- hidden evaluator firewall;
-- premium WebSocket telemetry;
-- run reports and data export;
-- Pi/Codex/Claude/Gemini/OpenCode/Aider/generic adapters.
-
-Existing commands such as `phase run`, `phase ui`, and `phase cloud:dev` continue to work. They are now execution/compatibility infrastructure beneath the workflow/fiber abstraction rather than the conceptual center of Phase.
-
-See `PHASE-RUNTIME-v0.9.md` for the architecture and experimental model.
+Phase 0.x explored hidden-test isolation, provenance, harness adapters, recovery, cloud telemetry, and workflow allocation. That archaeology is preserved in Git history; 1.0 presents one public abstraction: **an SLM OS for measurable cognitive resource allocation.**
