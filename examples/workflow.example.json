@@ -1,0 +1,43 @@
+{
+  "schema": "phase-workflow-v1",
+  "id": "webgpu-game",
+  "cwd": ".",
+  "objective": "Ship a small browser-based WebGPU hack-and-slash.",
+  "constraints": [
+    "Use WebGPU directly",
+    "Keep dependencies minimal"
+  ],
+  "decisions": [
+    "Subjective game-feel choices return to the human"
+  ],
+  "allocator": {
+    "policy": "heuristic",
+    "base_url": "http://127.0.0.1:8080/v1",
+    "model": "phase-tpm-allocator"
+  },
+  "defaults": {
+    "agent": "auto",
+    "budget": {
+      "tokens": 24000,
+      "context_tokens": 12000,
+      "wall_ms": 900000,
+      "tool_calls": 40
+    }
+  },
+  "fibers": [
+    {
+      "id": "F1",
+      "objective": "Create the renderer and first-person movement loop.",
+      "depends_on": [],
+      "tools": ["read", "edit", "test"],
+      "validation": []
+    },
+    {
+      "id": "F2",
+      "objective": "Add enemies and melee combat without regressing movement.",
+      "depends_on": ["F1"],
+      "tools": ["read", "edit", "test"],
+      "validation": []
+    }
+  ]
+}

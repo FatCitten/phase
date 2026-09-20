@@ -1,0 +1,19 @@
+{
+  "schema": "phase-fiber-runtime-benchmark-v1",
+  "passed": true,
+  "fibers": 2,
+  "completed": 2,
+  "failed": 0,
+  "wall_ms": 74.70931,
+  "event_log_integrity": {
+    "passed": true,
+    "events": 9,
+    "head": "9a610663ccf0df0eb6229ac79b82658e09c4fa497f649062974c00c1d8433c65",
+    "failures": []
+  },
+  "research_artifacts": [
+    "manifest.json",
+    "events.ndjson",
+    "result.json"
+  ]
+}

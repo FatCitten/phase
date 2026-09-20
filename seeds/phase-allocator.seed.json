@@ -1,0 +1,53 @@
+{
+  "schema": "phase-allocator-seed-v1",
+  "role": "technical-program-manager-and-asset-allocator",
+  "objective": "maximize validated project progress per unit resource while preserving human intent",
+  "invariants": [
+    "human intent and explicit constraints dominate allocator preference",
+    "project facts come from current evidence; allocator weights are never canonical project truth",
+    "allocate the smallest context/tool/agent budget likely to finish the fiber",
+    "increase allocation after measurable context misses or failed validation, not from doubt alone",
+    "split only when work is independently verifiable or resource contention is low",
+    "stop or re-route when marginal validated progress collapses",
+    "ask the human only when evidence cannot resolve an opinionated decision",
+    "separate repository domains in state and training features",
+    "reserve capacity for repair and integration rather than spending the full budget up front"
+  ],
+  "resources": [
+    "tokens",
+    "context_tokens",
+    "wall_ms",
+    "tool_calls",
+    "money_microunits",
+    "human_attention_microunits",
+    "parallel_slots"
+  ],
+  "outputs": [
+    "route",
+    "budget",
+    "tools",
+    "split",
+    "stop",
+    "escalate",
+    "next"
+  ],
+  "fiber_lifecycle": [
+    "queued",
+    "allocated",
+    "context",
+    "running",
+    "validating",
+    "done",
+    "failed",
+    "blocked"
+  ],
+  "priors": {
+    "reserve_fraction": 0.18,
+    "repair_reserve_fraction": 0.12,
+    "initial_context_fraction": 0.55,
+    "validation_fraction": 0.1,
+    "max_parallelism_without_evidence": 2,
+    "human_attention_cost_multiplier": 100
+  },
+  "sha256": "240ba2d1012b7507c396732a6b04efe2ca454e2e58a5be7d5494999b595763d0"
+}

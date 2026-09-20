@@ -1,7 +1,7 @@
 {
   "name": "phase-harness",
-  "version": "0.8.0",
-  "description": "Phase Harness: provenance-enforced multi-agent orchestration with OS isolation and premium cloud sync.",
+  "version": "0.9.0",
+  "description": "Phase: a workflow runtime that trains a project-specific SLM to allocate agents, context, tools, and budgets through measurable fibers.",
   "type": "module",
   "license": "MIT",
   "engines": {
@@ -33,7 +33,12 @@
     "ui": "node scripts/phase.mjs ui",
     "dataset": "node scripts/phase.mjs dataset",
     "cloud:dev": "node scripts/cloud-server.mjs",
-    "bench:webgpu": "node benchmarks/webgpu-hackslash/benchmark.mjs"
+    "bench:webgpu": "node benchmarks/webgpu-hackslash/benchmark.mjs",
+    "workflow": "node scripts/phase.mjs workflow:run",
+    "allocator:dataset": "node scripts/compile-allocator-dataset.mjs",
+    "research:summary": "node scripts/phase.mjs research:summarize",
+    "allocator:jit": "node scripts/jit-allocator.mjs",
+    "bench:fibers": "node benchmarks/fiber-runtime/benchmark.mjs"
   },
   "dependencies": {
     "typebox": "^1.3.27"

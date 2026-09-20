@@ -37,7 +37,7 @@ export async function runHarness(configPath, { onStep = null } = {}) {
   process.env.PHASE_INDEX_PATH=indexPath;
   const publicShell=publicValidationShell(cfg);if(publicShell)process.env.PHASE_VALIDATE_COMMAND=publicShell;else delete process.env.PHASE_VALIDATE_COMMAND;
   const started=performance.now();
-  const cloud=new PhaseCloudClient(cfg.cloud,{runId:cfg.id,repositoryId:repositoryDomainId(cfg.cwd),clientVersion:'0.8.0'});
+  const cloud=new PhaseCloudClient(cfg.cloud,{runId:cfg.id,repositoryId:repositoryDomainId(cfg.cwd),clientVersion:'0.9.0'});
   await cloud.connect();
   await cloud.emit('run.started',{runId:cfg.id,tags:cfg.tags,task:cfg.cloud.telemetry==='trace'?cfg.task:undefined,taskFingerprint:taskFingerprint(cfg.task),worker:workerAdapterSummary(cfg.worker),policy:cfg.policy},{workerAdapter:cfg.worker.id,policy:cfg.policy});
   let controller;

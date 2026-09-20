@@ -1,0 +1,33 @@
+{
+  "schema": "phase-v09-validation-v1",
+  "version": "0.9.0",
+  "architecture_seed_sha256": "240ba2d1012b7507c396732a6b04efe2ca454e2e58a5be7d5494999b595763d0",
+  "tests": { "passed": 40, "failed": 0, "total": 40 },
+  "fiber_runtime_benchmark": {
+    "passed": true,
+    "fibers": 2,
+    "completed": 2,
+    "event_log_integrity": true
+  },
+  "legacy_webgpu_recovery_compatibility": {
+    "passed": true,
+    "direct_fixture_acceptance": false,
+    "phase_acceptance": true,
+    "automatic_repairs": 1,
+    "premium_cloud_events": 10,
+    "note": "Deterministic deliberately-fallible worker; validates orchestration/recovery compatibility, not general LLM quality."
+  },
+  "research_guards": [
+    "architecture seed hashed into experiment manifests",
+    "workflow hash and git snapshot recorded",
+    "research events form a SHA-256 hash chain",
+    "raw algebraic signals stored separately from experiment objective",
+    "model allocator decisions clamped to fiber ceilings and capability allowlists",
+    "repository-domain feature anchors tested for strong separation"
+  ],
+  "limitations": [
+    "No production coding-agent CLI was installed in the build environment, so v0.9 workflow validation uses deterministic exec fixtures.",
+    "JIT LoRA training was syntax-checked but not executed because it requires a model/training environment.",
+    "Generic third-party adapters receive token/context/tool-call allocations as declared budgets; hard enforcement requires adapter/provider support."
+  ]
+}
