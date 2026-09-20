@@ -2,7 +2,15 @@
 
 Phase treats dataset integrity as a compatibility boundary.
 
-Changes to the ISA, packet encoding, signal semantics, state-vector construction, corpus derivation, or "unobserved vs zero" behavior require tests and a schema/version decision. Never silently reinterpret an existing opcode or measurement field.
+Changes to process-event semantics, canonical file membership, hash/seal behavior, Phase ISA encoding, signal semantics, state-vector construction, corpus derivation, or "unobserved vs zero" behavior require tests and an explicit schema/version decision. Never silently reinterpret an existing measurement.
+
+Rules for data-facing changes:
+
+- canonical capture records what happened, not what a heuristic wishes happened;
+- do not silently redact, summarize, normalize, or repair canonical bytes;
+- derived views must be reproducible from canonical data;
+- live/unsealed runs must never be presented as verified corpus members;
+- a measured zero and an unobserved value are different data.
 
 Before submitting changes:
 
@@ -10,5 +18,3 @@ Before submitting changes:
 npm test
 npm run bench
 ```
-
-A derived analysis feature should consume canonical data; it should not mutate canonical run files.

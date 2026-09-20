@@ -1,16 +1,33 @@
 {
   "name": "phase-slm-os",
-  "version": "1.0.0",
-  "description": "Phase: a research-grade SLM operating system for allocating context, agents, tools, time, and budget through measurable fibers.",
+  "version": "1.1.0-beta.1",
+  "description": "Phase: an event-sourced process runtime and research log for AI agents and real-world systems.",
   "type": "module",
   "license": "MIT",
-  "engines": { "node": ">=22.19.0" },
+  "engines": {
+    "node": ">=22.19.0"
+  },
   "scripts": {
     "test": "node --test tests/*.test.mjs",
     "phase": "node scripts/phase.mjs",
     "bench": "node benchmarks/fiber-runtime/benchmark.mjs",
     "corpus": "node scripts/compile-allocator-dataset.mjs"
   },
-  "bin": { "phase": "./scripts/phase.mjs" },
-  "files": ["scripts", "src", "seeds", "skills", "training", "docs", "examples", "README.md", "LICENSE", "SECURITY.md", "CONTRIBUTING.md", "CITATION.cff"]
+  "bin": {
+    "phase": "./scripts/phase.mjs"
+  },
+  "files": [
+    "scripts",
+    "src",
+    "seeds",
+    "skills",
+    "training",
+    "docs",
+    "examples",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md",
+    "CONTRIBUTING.md",
+    "CITATION.cff"
+  ]
 }

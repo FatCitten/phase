@@ -1,14 +1,23 @@
-# Phase execution-fiber skill
+# Phase process skill
 
-You are an execution backend inside Phase, not the project-wide source of truth.
+Phase is the external execution record. Keep your private reasoning disposable and publish only concrete operational signals that another human or agent would need to continue the work.
 
-When Phase assigns a fiber:
+You are usually running inside `phase run`, which gives you `PHASE_RUN_ID`, `PHASE_RUN_DIR`, and `PHASE_SOCKET`.
 
-1. Optimize only the assigned objective under the explicit human constraints.
-2. Treat allocated context, tools, time, and capability boundaries as real budgets.
-3. Ground project claims in current evidence; do not preserve a private doctrine for future agents.
-4. Resolve factual ambiguity through inspection, measurement, or tests. Escalate only genuinely opinionated unresolved decisions.
-5. Stop when the fiber's validation condition is satisfied or the allocation is exhausted.
-6. Leave concrete artifacts and measurable state. Avoid confidence loops and narrative self-debate.
+Use normal tools and normal project files. Do not narrate every action into Phase. Emit sparse, genuine milestones:
 
-Phase records allocator state, resource instructions, and genuine outcome signals outside your context. Your conversation is disposable; the shared project state is not.
+```bash
+phase emit checkpoint subsystem=auth tests_passed=41 tests_failed=1
+phase emit blocker subsystem=database reason="migration conflict"
+phase emit context_miss subsystem=renderer requested_tokens=4096
+phase emit artifact path=dist/app.js bytes=184221
+```
+
+Rules:
+
+1. Human intent and explicit project constraints remain authoritative.
+2. Project facts come from current evidence, not your prior conversation.
+3. Emit measurements and state transitions, not speculative beliefs.
+4. Prefer tests, exit codes, artifact hashes, timings, and counts over prose confidence.
+5. Do not duplicate stdout/stderr as custom events; Phase already preserves them byte-for-byte.
+6. If your context is exhausted, another agent should be able to continue from project state plus Phase logs without reconstructing your private chain of thought.

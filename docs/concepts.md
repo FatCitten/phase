@@ -1,22 +1,29 @@
 # Concepts
 
-## Workflow
-Human intent compiled into explicit objectives, dependencies, constraints, validation gates, and resource ceilings.
+## Run
+
+One operating-system process tree observed by Phase. A run has an immutable launch specification, a single ordered event stream, byte-exact stdout/stderr captures, mutable operational metadata, and an optional final seal.
+
+## Event
+
+The smallest shared truth in the process runtime. Events are sequential and SHA-256 hash chained. They record measured lifecycle/resource activity, control requests, byte ranges emitted by the process, and sparse structured signals explicitly emitted by software inside the run.
+
+## Control socket
+
+A run-local IPC endpoint. External Phase commands send pause/resume/stop/kill and `emit` requests to the supervisor through this socket so only one writer owns the canonical event sequence.
+
+## Corpus
+
+A content-addressed index of verified sealed runs. A corpus is not a cleaned rewrite of the source logs.
 
 ## Fiber
-A temporary allocation of cognition. A fiber owns an objective and receives an execution backend, context budget, tool capabilities, time, and other resources. It is disposable after its measurable outcome is recorded.
+
+In the allocator research layer, a fiber is a temporary allocation of cognition. The process runtime does not require fibers; ordinary programs can be observed without accepting Phase's research abstractions.
 
 ## TPM allocator
-A small model or deterministic control policy that answers: how much, where, for whom, to do what, for how long, then what? It is not project memory and it does not produce project code.
 
-## Phase VM
-The runtime that enforces capability/resource ceilings and executes Phase ISA decisions through agent adapters.
+A small model or deterministic policy that can learn allocation decisions from measured state → control → outcome trajectories. It is not project memory and does not produce project code.
 
-## State bus
-The exact numerical input state presented to allocation policy.
+## Phase ISA
 
-## Control bus
-What the allocator/runtime chose to allocate and execute.
-
-## Signal bus
-What the environment measurably returned.
+The low-level research instruction vocabulary used by the allocator path. It remains available beneath the simpler process/logging interface.

@@ -1,36 +1,67 @@
 # Data integrity model
 
-The dataset is Phase's primary asset. Phase therefore uses a one-way data hierarchy.
+The dataset is Phase's primary asset. The runtime therefore uses a one-way hierarchy:
 
 ```text
-canonical measurement
-      ↓
-derived human view
-      ↓
-derived training view
-      ↓
+raw measured bytes / events
+        ↓
+derived operational views
+        ↓
+derived research/training views
+        ↓
 experiment objective / reward
 ```
 
 Nothing below a layer may rewrite the layer above it.
 
-## Canonical run
+## Canonical process run
 
-`workflow.json`, `symbols.ndjson`, `state.phasebin`, `control.phasebin`, and `signals.phasebin` are canonical. `manifest.json` records a SHA-256 digest for each; `SEALED` records the manifest digest.
+For the beta process runtime, canonical data is:
 
-Every `.phasebin` record has a CRC32 so local corruption can be located before file-level SHA verification.
+- `command.json` — immutable launch specification
+- `events.ndjson` — ordered, SHA-256 hash-chained measurements and control requests
+- `stdout.raw` — byte-exact child stdout
+- `stderr.raw` — byte-exact child stderr
 
-`events.ndjson` and `result.json` are convenience views and are explicitly marked derived.
+At exit, `process-manifest.json` records SHA-256 and byte size for every canonical file plus the final event-chain head. `SEALED` stores the manifest digest.
+
+`meta.json` is operational state and is intentionally not canonical.
+
+Output events contain offsets, byte lengths, and hashes into the raw stream files rather than rewriting the text into a second source of truth.
+
+## Canonical allocator research run
+
+The Phase ISA research path continues to use:
+
+- `workflow.json`
+- `symbols.ndjson`
+- `state.phasebin`
+- `control.phasebin`
+- `signals.phasebin`
+
+Each `.phasebin` record has a CRC32 and the sealed research manifest records file-level SHA-256 hashes. Those files remain the canonical source for allocator episodes.
 
 ## Null is data
 
-A zero means a measured zero. An unavailable measurement is not a zero. Agent adapters that cannot expose exact input tokens, output tokens, retries, or context misses leave those fields unobserved.
+A zero means a measured zero. An unavailable measurement is not a zero. Unsupported process counters, unavailable token counts, missing context-miss telemetry, and other unobserved quantities stay `null` or absent.
 
-## Corpus
+## Process corpus
 
-`phase corpus` verifies every source run before indexing it. The corpus stores manifest hashes and canonical stream hashes, deduplicates identical sealed runs, rejects corrupt runs in strict mode, and creates `allocation-episodes.ndjson` by decoding the raw buses.
+`phase corpus` verifies sealed process runs before indexing them. Live/unsealed runs are explicitly skipped. Corrupt sealed runs are rejected in strict mode.
 
-An allocation episode contains:
+The corpus is content-addressed by source manifest hashes. It does not copy, normalize, summarize, or repair canonical run bytes.
+
+```text
+sealed process run
+      ↓ verify
+process-runs.ndjson
+      ↓
+sealed corpus index
+```
+
+## Allocator corpus
+
+`phase corpus --research` builds the older allocator research view. Allocation episodes are reconstructed from state/control/signal buses:
 
 ```text
 allocator state vector
@@ -38,8 +69,8 @@ allocator state vector
 → measured validation + timing outcome
 ```
 
-The derived episode can always be regenerated from sealed source runs.
+The derived episode can always be regenerated from the sealed source run.
 
 ## Rewards are not raw data
 
-A scalar utility such as "validated progress per resource" is a research hypothesis. It belongs in analysis/training configuration, not in canonical capture. This permits future experiments to change objectives without relabeling history.
+A scalar utility such as "validated progress per resource" is a research hypothesis. It belongs in analysis/training configuration, not canonical capture. Future experiments may change objectives without relabeling history.

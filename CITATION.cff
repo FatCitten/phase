@@ -1,7 +1,7 @@
 cff-version: 1.2.0
-title: "Phase: SLM OS for Cognitive Resource Allocation"
-message: "If Phase contributes to published research, cite the software release and the exact corpus manifest hashes used in the experiment."
+title: "Phase: Event-Sourced Runtime for AI Processes and Cognitive Resource Research"
+message: "If Phase contributes to published research, cite the software release and the exact sealed run/corpus manifest hashes used in the experiment."
 type: software
-version: 1.0.0
+version: 1.1.0-beta.1
 license: MIT
 date-released: 2026-09-19

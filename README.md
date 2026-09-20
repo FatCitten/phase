@@ -1,57 +1,39 @@
-# Phase 1.0
+# Phase beta
 
-**Phase treats agentic work as resource flow.**
+**Run anything. Know exactly what happened.**
 
-A project can be much larger than any model's context window. Phase compiles a human workflow into temporary **fibers**, allocates agents/context/tools/time to those fibers, and records the resulting execution as a small machine-readable instruction and signal stream. A tiny TPM/allocator model can then learn how to spend expensive intelligence from measured outcomes instead of learning project facts.
+Phase is an event-sourced process runtime for AI agents, coding tools, services, CI jobs, and ordinary Unix commands. It wraps a real process, preserves its stdout/stderr byte-for-byte, measures the process group, records a hash-chained event log, and gives humans or agents simple process control.
 
-```text
-human workflow
-     │
-     ▼
-workflow compiler LLM
-     │
-     ▼
-Phase Workflow IR
-     │
-     ▼
-TPM allocator SLM ─── Phase architecture seed
-     │
-     ▼
-Phase ISA
-     │
- ┌───┼────┐
- ▼   ▼    ▼
-fiber fiber fiber
- │    │    │
-agent agent agent
- └────┼────┘
-      ▼
-state / control / signal buses
-      ▼
-sealed research corpus
+There is no required dashboard and no proprietary workflow shell. Your program still behaves like your program.
+
+```bash
+phase run -- npm test
 ```
 
-## What is canonical
+That is the main interface.
 
-Phase 1.0 makes a hard distinction between **measurement** and **interpretation**.
+## Why
 
-Each completed run is sealed with hashes and contains:
+Agentic coding is usually constrained by context, retries, and recoverability rather than raw model intelligence. Phase makes the execution itself observable and controllable without forcing the agent into a custom harness.
 
 ```text
-workflow.json       exact workflow input
-symbols.ndjson      symbol dictionary
-state.phasebin      allocator input state
-control.phasebin    allocations and execution instructions
-signals.phasebin    measured outcomes
-manifest.json       hashes + run metadata
-SEALED              manifest digest
-events.ndjson       derived human-readable event view
-result.json         derived summary
+                ordinary process
+          codex / claude / node / bash
+                       │
+                       ▼
+                 ┌───────────┐
+                 │   Phase   │
+                 └─────┬─────┘
+                       │
+          append-only measured events
+                       │
+          ┌────────────┼────────────┐
+          ▼            ▼            ▼
+        human          SLM       infrastructure
+        CLI            TPM       logs / OTEL
 ```
 
-The three `.phasebin` buses use fixed-width 32-byte records with per-record CRC32. The run manifest SHA-256 seals every canonical file. Training examples are reconstructed from those buses; event prose and scalar rewards are never required.
-
-**Missing telemetry stays missing.** An unobserved token count/context miss/retry is `null`, not a fabricated zero.
+The log is the interface. Everything else is a view.
 
 ## Install
 
@@ -63,101 +45,214 @@ npm link
 phase --help
 ```
 
-## Use
+## Five commands to learn
 
-Create a workflow:
+### Run
 
 ```bash
-phase init phase-workflow.json .
+phase run -- npm test
+phase run -- codex exec "fix the failing tests"
+phase run -- python worker.py
 ```
 
-Or have an LLM compile a natural-language workflow:
+The child keeps normal stdout and stderr behavior while Phase records exact copies.
+
+Run a long-lived service in the background:
 
 ```bash
-phase compile "Build the project, split independently verifiable work, and return subjective decisions to me"
+phase run -d --name api -- node server.js
 ```
 
-Run it:
+### Watch
 
 ```bash
-phase run phase-workflow.json
+phase logs -f
 ```
 
-Watch raw Phase instructions/signals in real time:
+Example:
 
-```bash
-phase run phase-workflow.json --raw
+```text
+20:18:04 RUN    api → node server.js
+20:18:04 PROC   pid=18291 pgid=18291
+20:18:05 OUT    listening on :8080
+20:18:09 EVENT  suite=auth passed=41 failed=1
+20:18:10 CTRL   pause (SIGSTOP)
+20:18:14 CTRL   resume (SIGCONT)
+20:18:29 EXIT   code=0 signal=—
 ```
 
-Inspect a sealed run:
+Useful filters:
 
 ```bash
-phase trace .phase/experiments/<run>
-phase trace .phase/experiments/<run> --state
-phase raw   .phase/experiments/<run> signals --hex
-phase verify .phase/experiments/<run>
-phase replay .phase/experiments/<run>
+phase logs --stream stderr
+phase logs --type emit
+phase logs --all                 # include resource samples
+phase logs --json               # exact canonical event records
+phase logs --json --with-output # integration-friendly message view
 ```
 
-Build a content-addressed corpus from sealed runs:
+### Inspect
 
 ```bash
-phase corpus .phase/experiments .phase/corpus
+phase inspect
+```
+
+```text
+● run_...  api
+  state     running
+  process   pid=18291  pgid=18291
+  command   node server.js
+  resources rss=184MB  cpu=1912ms  io=4.2MB↓/812KB↑  procs=3
+  data      231 events  42KB stdout  1.1KB stderr
+  integrity LIVE / UNSEALED
+```
+
+### Control
+
+```bash
+phase pause
+phase resume
+phase stop
+phase kill
+```
+
+On Unix, Phase controls the entire process group, not only the first PID.
+
+### Verify
+
+When the process exits Phase seals the run:
+
+```bash
+phase verify
+```
+
+The verifier checks the event hash chain plus SHA-256 hashes and byte sizes of every canonical file.
+
+## Agents can speak Phase without an SDK
+
+Every wrapped process receives:
+
+```text
+PHASE_RUN_ID
+PHASE_RUN_DIR
+PHASE_SOCKET
+PHASE_HOME
+```
+
+Any subprocess can publish a genuine structured signal with one shell command:
+
+```bash
+phase emit checkpoint tests=42 passed=41
+phase emit context_miss subsystem=auth requested_tokens=4096
+phase emit artifact path=dist/app.js bytes=184221
+```
+
+That event enters the same ordered hash chain as OS measurements and process output.
+
+This makes Phase useful inside any existing agent workflow without requiring an agent framework integration.
+
+## Storage
+
+By default Phase writes to `.phase/runs/`. Set `PHASE_HOME` for servers:
+
+```bash
+export PHASE_HOME=/var/lib/phase
+```
+
+A sealed process run contains:
+
+```text
+command.json             immutable launch specification
+events.ndjson            ordered SHA-256 hash-chained measurements
+stdout.raw               byte-exact child stdout
+stderr.raw               byte-exact child stderr
+process-manifest.json    hashes, sizes, host metadata and Git state
+SEALED                    manifest digest
+meta.json                 mutable operational view (not canonical)
+```
+
+**Canonical data records what happened.** Derived summaries, rewards, dashboards, explanations, and training targets are never allowed to rewrite it.
+
+Missing telemetry stays missing. Phase does not turn unknown measurements into convenient zeroes.
+
+## Build a clean playtest corpus
+
+Once runs have finished:
+
+```bash
+phase corpus
 phase verify .phase/corpus
 ```
 
-Train the allocator view:
+Only sealed, verified process runs enter the index. Live runs are reported as skipped and corrupt sealed runs fail the build. The corpus points back to the original content-addressed run data rather than creating a cleaned substitute.
+
+## Existing infrastructure
+
+Phase intentionally composes with normal operations tooling.
 
 ```bash
-phase train .phase/experiments .phase/models/allocator
+# shell pipelines
+phase logs --json --with-output -f | vector ...
+
+# RFC 5424-ish syslog view
+phase export --format syslog
+
+# OpenTelemetry LogRecord JSON view
+phase export --format otel
+
+# plain JSONL
+phase export --format jsonl
 ```
 
-## Fibers
+See [docs/integrations.md](docs/integrations.md) for systemd, Docker, Kubernetes, Vector/Fluent Bit, and OpenTelemetry patterns.
 
-A fiber is a temporary allocation of cognition, not an agent identity.
+## Vibe coding for agents
+
+An agent does not need to preserve a giant conversation to remain useful. Run it as a process, let it emit important state transitions, and let Phase preserve the execution boundary:
+
+```bash
+phase run -d --name repair-auth -- \
+  codex exec "repair auth, run tests, stop when the suite passes"
+
+phase logs -f
+```
+
+A second agent, an SLM scheduler, or a human can inspect the same event stream. No agent needs another agent's private chain of thought.
+
+## Research layer
+
+Phase 1.0's allocator/ISA research remains underneath the process runtime. Advanced commands are still available:
+
+```bash
+phase init
+phase compile "..."
+phase run phase-workflow.json
+phase trace <research-run>
+phase raw <research-run>
+phase corpus
+phase train
+```
+
+The long-term TPM dataset is simply a cleaner form of the same idea:
 
 ```text
-⠸ F1       █████████████░░░░░░░░░░░  55%  renderer   codex working
-✓ F2       ████████████████████████ 100%  tests      validated
+preceding measured events
+          ↓
+allocation / control decision
+          ↓
+following measured events
+          ↓
+objective outcome
 ```
 
-Progress is lifecycle state (`queued → allocated → context → running → validating → done`), not a fabricated estimate of coding completion.
+Project facts belong in the project. The small model learns allocation behavior, not doctrine.
 
-## Phase ISA
+## Beta principle
 
-The allocator ultimately controls a tiny instruction vocabulary:
+Phase should be less complicated than the thing it observes.
 
-```asm
-FORK     F17
-ROUTE    F17, codex
-ALLOC    F17, CONTEXT_TOKENS, 8192
-ALLOC    F17, WALL_MS, 120000
-GRANT    F17, read
-GRANT    F17, edit
-RUN      F17
-GATE     F17, 3
-RELEASE  F17
+If a command works outside Phase, this should usually work:
+
+```bash
+phase run -- <that command>
 ```
-
-Fibers return genuine signal packets such as validation pass/fail, wall time, allocated context/tool budget, context misses when observable, retries when observable, and human requests when observable.
-
-See [docs/isa.md](docs/isa.md) and [docs/data.md](docs/data.md).
-
-## Research question
-
-Phase does not attempt to make the coding model itself smarter. The core question is:
-
-> Can a project teach a small allocator how to spend fixed pools of context, model calls, tools, time, money, and human attention more effectively than a static policy?
-
-The intended comparison is always under matched resource pools: heuristic allocator vs learned allocator, measured by validated project progress and the raw resources actually observed.
-
-## Design invariants
-
-- Human intent and explicit constraints outrank allocator preference.
-- Project truth lives in current evidence, not TPM weights.
-- The allocator may suggest resource decisions; the runtime clamps them to declared capabilities and ceilings.
-- Canonical data records what happened, not what Phase wishes had happened.
-- Derived rewards/objectives are versioned transforms and may be replaced without rewriting raw runs.
-- Repository provenance and OS isolation remain hard boundaries underneath the allocator.
-
-Phase 0.x explored hidden-test isolation, provenance, harness adapters, recovery, cloud telemetry, and workflow allocation. That archaeology is preserved in Git history; 1.0 presents one public abstraction: **an SLM OS for measurable cognitive resource allocation.**
