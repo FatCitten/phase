@@ -1,0 +1,29 @@
+Investigate why the corpus builder is failing to derive episodes from some sealed runs and fix the issue.
+
+Background:
+The buildProcessTrainingDataset() function in src/process-episodes.mjs may fail on certain runs due to:
+- Missing expected event types
+- Malformed manifests
+- Edge cases in signal extraction
+
+Your task:
+1. Run the episode derivation on the current .phase directory
+2. Identify any runs that fail derivation and understand why
+3. Fix the extraction logic to handle edge cases gracefully
+4. Add defensive checks that preserve unknown measurements as null (don't fabricate)
+5. Document the failure modes in a comment
+
+Success criteria:
+- All sealed runs in .phase/runs are successfully converted to episodes (or explicitly skipped with a clear reason)
+- No silent failures - errors are logged or runs are skipped with explanation
+- The fix handles: missing events, zero-length runs, runs with no emits, runs that timed out
+
+Constraints:
+- Do not change the episode schema
+- Preserve the principle: "unknown measurements remain null"
+- Add tests for edge cases if possible
+
+Hints:
+- Check what events exist in each run's events.ndjson
+- Look at extractProcessSignals() - it may assume events exist that don't
+- Consider runs that exited immediately vs. runs that ran for a while

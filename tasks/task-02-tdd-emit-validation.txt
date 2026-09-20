@@ -1,0 +1,28 @@
+Implement a `phase validate` command that runs a validation script and records the result as a structured event.
+
+Requirements:
+1. Add a new CLI subcommand: `phase validate <script-or-command>`
+2. The command should:
+   - Find the latest sealed run (or accept a run_id argument)
+   - Execute the provided validation command in the run's original cwd
+   - Capture exit code and output
+   - Emit an event: `phase emit validation status=<pass|fail> exit_code=<N> duration_ms=<N>`
+   - Append the result to a validation log in the run directory
+3. Update the help text to document the new command
+4. Add basic tests in tests/process-runtime.test.mjs
+
+Success criteria:
+- `phase validate --help` shows the new command
+- Running `phase validate "node --test tests/*.test.mjs"` on a sealed run produces a validation event
+- The validation result is visible in `phase logs` and `phase inspect`
+- New tests pass
+
+Constraints:
+- Do not modify existing sealed runs; only append validation results
+- Keep the validation command execution simple (no complex timeout/retry logic yet)
+- Use existing Phase utilities where possible
+
+Hints:
+- Look at how `phase verify` resolves run IDs
+- The emitEvent() function in scripts/phase.mjs shows how to emit events
+- Validation should be a new event type, not replacing existing events

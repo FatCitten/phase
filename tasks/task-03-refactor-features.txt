@@ -1,0 +1,29 @@
+Refactor the state vector encoding in src/phase-features.mjs to support variable-length vectors and named feature domains.
+
+Current state:
+- encodeAllocationState() produces a fixed 96-dimensional vector
+- Features are hard-coded (repo anchors, fiber id, agent, tools, lex tokens, progress, failures, etc.)
+- No way to inspect what each dimension represents
+
+Requirements:
+1. Add a feature registry that maps feature names to indices
+2. Support variable-length vectors (configurable dimensions)
+3. Add a decode function: `decodeAllocationState(vector, registry)` that returns a human-readable object
+4. Update the encode function to use the registry
+5. Add a CLI command: `phase features show` that displays the current feature schema
+
+Success criteria:
+- Backward compatible: existing encoded vectors can still be decoded with the old schema
+- New vectors include a schema version and registry reference
+- `phase features show` outputs a clear feature map
+- Tests pass for both encode and decode
+
+Constraints:
+- Keep the hash-based feature distribution (add() function)
+- Do not change the cosine similarity function signature
+- Preserve repository domain separation
+
+Hints:
+- The feature registry could be a JSON schema stored in seeds/
+- Consider adding feature group metadata (lexical, structural, runtime, etc.)
+- The decode function doesn't need to be perfect - approximate reconstruction is acceptable

@@ -1,0 +1,27 @@
+This task is designed to produce a failure → repair cycle for training data.
+
+Step 1 (intentionally flawed implementation):
+Implement a naive version of the `phase stats --emit <type>` filter that only matches exact type strings (not prefixes).
+
+Step 2 (run validation):
+Run `phase stats latest --emit checkpoint` and observe it returns no results even though checkpoint events exist.
+
+Step 3 (repair):
+Fix the filter to use prefix matching (e.type.startsWith(filter)) like the logs command does.
+
+Success criteria:
+- Initial implementation is intentionally naive (exact match only)
+- Validation demonstrates the bug (stats return empty when they shouldn't)
+- Repair fixes the issue
+- Both the failure and repair are captured in the Phase event log via emits
+
+Constraints:
+- Emit a checkpoint after step 1: `phase emit checkpoint stage=initial status=naive_impl`
+- Emit a blocker when you discover the bug: `phase emit blocker type=filter_bug reason="exact match fails prefix"`
+- Emit a checkpoint after repair: `phase emit checkpoint stage=repaired status=prefix_match`
+
+This task produces valuable training signals:
+- A measurable failure (validation mismatch)
+- A context miss (understanding the expected behavior)
+- A repair cycle
+- Clear before/after states

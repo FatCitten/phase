@@ -1,0 +1,30 @@
+Implement a minimal feature under tight resource constraints.
+
+Task: Add a `--json` flag to `phase ps` that outputs run listings as JSON instead of ASCII table.
+
+Constraints (enforced by human reviewer):
+- Maximum 3 tool calls (read, edit, bash for tests)
+- Maximum 2048 tokens of code changes
+- Must complete in under 60 seconds wall time
+- No new dependencies
+
+Success criteria:
+- `phase ps --json` outputs valid JSON array of run objects
+- Each object contains: run_id, name, state, pid, age, command (truncated)
+- Output is pipe-friendly (no extra logging to stdout)
+- Backward compatible: default behavior unchanged
+
+Process:
+1. Read the current `phase ps` implementation
+2. Plan the minimal change
+3. Implement
+4. Test with: `phase ps --json | jq .`
+5. Emit milestones:
+   - `phase emit checkpoint stage=plan tool_calls_budget=3`
+   - `phase emit checkpoint stage=impl tool_calls_used=<N>`
+   - `phase emit validation name=ps_json status=pass`
+
+Training value:
+- Demonstrates allocation efficiency under constraints
+- Shows tool call tracking
+- Produces a clean pass signal with resource measurements

@@ -1,0 +1,19 @@
+Fix the off-by-one error in the Phase process runtime sampling logic.
+
+Background: The ProcessGroupSampler class in src/process-runtime.mjs periodically scans /proc to discover new child processes. There is a boundary condition where the scan interval calculation can cause an extra scan or skip a scan incorrectly.
+
+Success criteria:
+- Identify the exact location of the off-by-one error in the sampling logic
+- Fix the error without changing the overall algorithm
+- All existing tests must still pass: node --test tests/*.test.mjs
+- The fix should be minimal (under 20 lines changed)
+
+Constraints:
+- Do not refactor unrelated code
+- Keep the same public API
+- Add a comment explaining the fix
+
+Hints:
+- Look at the ProcessGroupSampler.sample() method
+- Check the sinceScan increment and comparison logic
+- The bug is subtle - the logic looks correct at first glance
