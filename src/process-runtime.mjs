@@ -149,6 +149,72 @@ export function sampleProcessGroup(pgid) {
   };
 }
 
+// ProcessGroupSampler caches the members of a process group so we do NOT
+// rescan the entire /proc table on every sample. A full scan only happens
+// periodically (every `scanEvery` samples) to discover NEW descendants a game
+// or tool spawns; in between, only the known PIDs are read. This keeps the
+// per-sample cost O(group size) instead of O(all processes), which matters
+// when wrapping a real-time game or long-running build under Phase.
+export class ProcessGroupSampler {
+  constructor(pgid, { scanEvery = 20 } = {}) {
+    this.pgid = Number(pgid);
+    this.scanEvery = Math.max(1, Number(scanEvery) || 20);
+    this.members = new Set();
+    this.sinceScan = 0;
+    this._discover();
+  }
+
+  _procPids() {
+    try { return readdirSync('/proc').filter(x => /^\d+$/.test(x)).map(Number); } catch { return []; }
+  }
+
+  // Full pass: sync member set against the real process group membership.
+  _discover() {
+    const members = new Set();
+    for (const pid of this._procPids()) {
+      const s = procStat(pid);
+      if (s && s.pgrp === this.pgid) members.add(s.pid);
+    }
+    if (!members.size) members.add(this.pgid); // keep the leader until it dies
+    this.members = members;
+    this.sinceScan = 0;
+  }
+
+  // Cheap pass: only sample known PIDs, pruning those that have exited and
+  // opportunistically adopting any children of a known member (catches
+  // short-lived descendants without a full rescan each time).
+  sample() {
+    if (process.platform !== 'linux') return {
+      processes: null, cpu_ms: null, user_cpu_ms: null, system_cpu_ms: null,
+      rss_bytes: null, read_bytes: null, write_bytes: null
+    };
+    this.sinceScan++;
+    if (this.sinceScan >= this.scanEvery) this._discover();
+
+    let userTicks = 0, systemTicks = 0, rssPages = 0, readBytes = 0, writeBytes = 0, processes = 0;
+    let writeObserved = false;
+    for (const pid of [...this.members]) {
+      const s = procStat(pid);
+      if (!s || s.pgrp !== this.pgid) { this.members.delete(pid); continue; }
+      processes++;
+      userTicks += s.utime || 0; systemTicks += s.stime || 0; rssPages += Math.max(0, s.rssPages || 0);
+      const io = procIo(pid);
+      if (io.readBytes != null) readBytes += io.readBytes;
+      if (io.writeBytes != null) { writeObserved = true; writeBytes += io.writeBytes; }
+    }
+    const userMs = userTicks * 1000 / CLK_TCK, systemMs = systemTicks * 1000 / CLK_TCK;
+    return {
+      processes,
+      cpu_ms: Math.round((userMs + systemMs) * 1000) / 1000,
+      user_cpu_ms: Math.round(userMs * 1000) / 1000,
+      system_cpu_ms: Math.round(systemMs * 1000) / 1000,
+      rss_bytes: rssPages * PAGE_SIZE,
+      read_bytes: readBytes || null,
+      write_bytes: writeObserved ? writeBytes : null
+    };
+  }
+}
+
 export function socketPathFor(runDir, runId) {
   return process.platform === 'win32' ? `\\\\.\\pipe\\phase-${runId}` : join(resolve(runDir), 'control.sock');
 }
@@ -232,8 +298,9 @@ export async function superviseProcess({ runDir, foreground = false } = {}) {
   const err = new RawCapture(join(runDir, 'stderr.raw'), 'stderr', log, foreground ? process.stderr : null);
   child.stdout.on('data', x => out.write(x)); child.stderr.on('data', x => err.write(x));
 
+  const sampler = new ProcessGroupSampler(child.pid, { scanEvery: Number(spec.scan_every ?? 20) });
   const sample = () => {
-    const s = sampleProcessGroup(child.pid);
+    const s = sampler.sample();
     log.append('resource.sample', s, 'os');
     state.resources = s;
     const peak = state.resource_peak ?? { rss_bytes: null, processes: null };
@@ -243,8 +310,23 @@ export async function superviseProcess({ runDir, foreground = false } = {}) {
     atomicJson(metaPath, state);
   };
   sample();
-  const timer = setInterval(sample, Math.max(250, Number(spec.sample_ms ?? 1000)));
+  const sampleMs = Math.max(100, Number(spec.sample_ms ?? 1000));
+  const timer = setInterval(sample, sampleMs);
   timer.unref?.();
+
+  // Optional hard timeout: terminate the whole group if the run overruns.
+  let timedOut = false;
+  let timeoutTimer = null, graceTimer = null;
+  if (Number(spec.timeout_ms ?? 0) > 0) {
+    timeoutTimer = setTimeout(() => {
+      timedOut = true;
+      log.append('control.timeout', { timeout_ms: Number(spec.timeout_ms), pid: child.pid, pgid: child.pid });
+      try { signalGroup(child.pid, 'SIGTERM'); } catch {}
+      graceTimer = setTimeout(() => { try { signalGroup(child.pid, 'SIGKILL'); } catch {} }, 5000);
+      graceTimer.unref?.();
+    }, Number(spec.timeout_ms));
+    timeoutTimer.unref?.();
+  }
 
   const relay = (signal) => {
     try { log.append('control.parent_signal', { signal }); signalGroup(child.pid, signal); } catch {}
@@ -257,7 +339,8 @@ export async function superviseProcess({ runDir, foreground = false } = {}) {
     child.once('exit', (code, signal) => resolveResult({ code, signal }));
   }).catch((error) => ({ error }));
 
-  clearInterval(timer); process.off('SIGINT', onInt); process.off('SIGTERM', onTerm);
+  clearInterval(timer); if (timeoutTimer) clearTimeout(timeoutTimer); if (graceTimer) clearTimeout(graceTimer);
+  process.off('SIGINT', onInt); process.off('SIGTERM', onTerm);
   out.close(); err.close();
   if (result.error) {
     state.state = 'failed'; state.ended_at = new Date().toISOString();
@@ -267,6 +350,11 @@ export async function superviseProcess({ runDir, foreground = false } = {}) {
     state.state = result.code === 0 ? 'exited' : 'failed';
     log.append('process.exit', { code: result.code, signal: result.signal });
   }
+  // Optional group cleanup: reap any orphaned subprocesses the child left behind
+  // (audio servers, shader compilers, worker tools). Off by default.
+  if (spec.kill_group && child.pid) {
+    try { log.append('control.group_kill', { pgid: child.pid, on_exit: true }); signalGroup(child.pid, 'SIGKILL'); } catch {}
+  }
   atomicJson(metaPath, state);
   await new Promise(r => server.close(r));
   if (process.platform !== 'win32') try { unlinkSync(socketPath); } catch {}
@@ -274,12 +362,14 @@ export async function superviseProcess({ runDir, foreground = false } = {}) {
   return { ...state, exit_code: state.exit_code ?? 1 };
 }
 
-export function createProcessRun({ command, args = [], cwd = process.cwd(), name = null, sampleMs = 1000, home = phaseHome(cwd) }) {
+export function createProcessRun({ command, args = [], cwd = process.cwd(), name = null, sampleMs = 1000, timeoutMs = 0, killGroup = false, scanEvery = 20, home = phaseHome(cwd) }) {
   cwd = resolve(cwd); home = resolve(home); mkdirSync(runRoot(home), { recursive: true, mode: 0o700 });
   const runId = makeRunId(); const runDir = runDirFor(runId, home); mkdirSync(runDir, { recursive: false, mode: 0o700 });
   const spec = {
     schema: 'phase-process-command-v1', run_id: runId, created_at: new Date().toISOString(),
-    name: name || basename(command), command, args: args.map(String), cwd, sample_ms: Number(sampleMs), phase_home: home
+    name: name || basename(command), command, args: args.map(String), cwd,
+    sample_ms: Number(sampleMs), timeout_ms: Number(timeoutMs), kill_group: !!killGroup, scan_every: Number(scanEvery),
+    phase_home: home
   };
   writeFileSync(join(runDir, 'command.json'), `${JSON.stringify(spec, null, 2)}\n`);
   atomicJson(join(runDir, 'meta.json'), {

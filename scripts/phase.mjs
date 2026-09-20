@@ -40,6 +40,8 @@ Data
   phase verify [run|path]                     Verify a sealed run / Phase dataset
   phase export [run] --format jsonl|syslog|otel
                                                 Stream a standard integration view
+  phase stats [run] [--emit TYPE] [--field KEY]
+                                                Aggregate numeric emit fields (avg/min/max)
 
 Research / allocator
   phase init [workflow.json] [repo]
@@ -59,7 +61,11 @@ Run options
   -d, --detach          Leave it running in the background
   --name NAME           Human name for the run
   --cwd DIR             Working directory for the child process
-  --sample-ms N         OS resource sampling interval (default 1000ms)
+  --sample-ms N         OS resource sampling interval in ms (default 1000, min 100)
+  --scan-every N        Full /proc rescan every N samples to discover new subprocs
+                        (default 20)
+  --timeout N           Auto-terminate the process group after N milliseconds
+  --kill-group          On exit, SIGKILL the whole process group to reap orphans
 
 Environment
   PHASE_HOME            Storage root (default: ./.phase)
@@ -84,7 +90,7 @@ function parseValue(v) { if (/^-?\d+(?:\.\d+)?$/.test(v)) return Number(v); if (
 function isAlive(pid) { if (!pid) return false; try { process.kill(Number(pid), 0); return true; } catch { return false; } }
 
 function parseProcessRunArgs(args) {
-  const opt = { detach: false, name: null, cwd: process.cwd(), sampleMs: 1000 };
+  const opt = { detach: false, name: null, cwd: process.cwd(), sampleMs: 1000, timeoutMs: 0, killGroup: false, scanEvery: 20 };
   let i = 0;
   for (; i < args.length; i++) {
     const a = args[i];
@@ -93,6 +99,9 @@ function parseProcessRunArgs(args) {
     if (a === '--name') { opt.name = args[++i]; continue; }
     if (a === '--cwd') { opt.cwd = resolve(args[++i]); continue; }
     if (a === '--sample-ms') { opt.sampleMs = Number(args[++i]); continue; }
+    if (a === '--scan-every') { opt.scanEvery = Number(args[++i]); continue; }
+    if (a === '--timeout') { opt.timeoutMs = Number(args[++i]); continue; }
+    if (a === '--kill-group') { opt.killGroup = true; continue; }
     if (a.startsWith('-')) return { error: `unknown run option: ${a}` };
     break;
   }
@@ -109,7 +118,7 @@ async function runProcessCommand(args) {
   const parsed = parseProcessRunArgs(args); if (parsed.error) throw new Error(parsed.error);
   const { opt, command, commandArgs } = parsed; if (!command) throw new Error('missing command; use: phase run -- <command> [args...]');
   const home = phaseHome(process.cwd());
-  const { runId, runDir } = createProcessRun({ command, args: commandArgs, cwd: opt.cwd, name: opt.name, sampleMs: opt.sampleMs, home });
+  const { runId, runDir } = createProcessRun({ command, args: commandArgs, cwd: opt.cwd, name: opt.name, sampleMs: opt.sampleMs, timeoutMs: opt.timeoutMs, killGroup: opt.killGroup, scanEvery: opt.scanEvery, home });
   const supArgs = [supervisorScript, '--run-dir', runDir]; if (!opt.detach) supArgs.push('--foreground');
   if (opt.detach) {
     const child = spawn(process.execPath, supArgs, { detached: true, stdio: 'ignore', env: process.env }); child.unref();
@@ -135,8 +144,12 @@ function runAge(meta) {
 function stateGlyph(state) { return state === 'running' ? color('32', '●') : state === 'paused' ? color('33', 'Ⅱ') : state === 'exited' ? color('32', '✓') : state === 'failed' ? color('31', '✗') : color('36', '·'); }
 function clip(s, n) { s = String(s ?? ''); return s.length <= n ? s : `${s.slice(0, Math.max(0, n - 1))}…`; }
 
-function printPs() {
-  const runs = listProcessRuns(); if (!runs.length) { console.log('No Phase process runs.'); return; }
+function printPs(json = false) {
+  const runs = listProcessRuns(); if (!runs.length) { if (!json) console.log('No Phase process runs.'); return; }
+  if (json) {
+    const rows = runs.slice(0, 50).map((x) => ({ run_id: x.run_id, name: x.name, state: ['running', 'paused', 'stopping'].includes(x.state) && !isAlive(x.supervisor_pid) ? 'orphaned' : x.state, exit_code: x.exit_code ?? null, elapsed_ms: runAge(x) }));
+    console.log(JSON.stringify(rows)); return;
+  }
   console.log(`${'RUN'.padEnd(31)} ${'STATE'.padEnd(9)} ${'PID'.padStart(7)} ${'AGE'.padStart(7)}  COMMAND`);
   for (const x of runs.slice(0, 50)) {
     let state = x.state; if (['running', 'paused', 'stopping'].includes(state) && !isAlive(x.supervisor_pid)) state = 'orphaned';
@@ -165,7 +178,9 @@ function inspectRun(input, json = false) {
 }
 
 function eventVisible(e, opt) {
-  if (!opt.all && e.type === 'resource.sample') return false;
+  // resource samples are hidden by default, but an explicit filter for them
+  // (--type / --stream) should override that hiding.
+  if (!opt.all && !opt.type && !opt.stream && e.type === 'resource.sample') return false;
   if (opt.type && !e.type.startsWith(opt.type)) return false;
   if (opt.stream === 'stdout' && e.type !== 'process.stdout') return false;
   if (opt.stream === 'stderr' && e.type !== 'process.stderr') return false;
@@ -250,6 +265,40 @@ async function exportRun(args) {
   }
 }
 
+function aggregateNumeric(events, { emitType = null, field = null } = {}) {
+  const acc = new Map();
+  for (const e of events) {
+    if (!e.type.startsWith('emit.')) continue;
+    if (emitType && e.type !== `emit.${emitType}`) continue;
+    for (const [k, v] of Object.entries(e.data ?? {})) {
+      if (typeof v !== 'number') continue;
+      if (field && k !== field) continue;
+      let a = acc.get(k); if (!a) { a = { count: 0, sum: 0, min: Infinity, max: -Infinity }; acc.set(k, a); }
+      a.count++; a.sum += v; if (v < a.min) a.min = v; if (v > a.max) a.max = v;
+    }
+  }
+  const out = {};
+  for (const [k, a] of acc) out[k] = a.count ? {
+    count: a.count, sum: a.sum, avg: a.sum / a.count, min: a.min, max: a.max
+  } : { count: 0, sum: 0, avg: 0, min: 0, max: 0 };
+  return out;
+}
+
+function statsRun(input, { emitType = null, field = null, json = false } = {}) {
+  const runDir = resolveProcessRun(input);
+  const meta = JSON.parse(readFileSync(join(runDir, 'meta.json'), 'utf8'));
+  const events = readProcessEvents(runDir);
+  const byField = aggregateNumeric(events, { emitType, field });
+  const res = { run_id: meta.run_id, name: meta.name, state: meta.state, exit_code: meta.exit_code,
+    signal: meta.signal, elapsed_ms: runAge(meta), events: events.length, fields: byField };
+  if (json) { console.log(JSON.stringify(res, null, 2)); return; }
+  console.log(`${stateGlyph(meta.state)} ${meta.run_id}  ${meta.name}   ${meta.state}${meta.exit_code != null ? ` exit=${meta.exit_code}` : ''}`);
+  const keys = Object.keys(byField);
+  if (!keys.length) { console.log('  (no numeric emit fields to aggregate)'); return; }
+  console.log(`${'field'.padEnd(16)} ${'count'.padStart(6)} ${'avg'.padStart(10)} ${'min'.padStart(10)} ${'max'.padStart(10)} ${'sum'.padStart(10)}`);
+  for (const k of keys) { const a = byField[k]; console.log(`${k.padEnd(16)} ${String(a.count).padStart(6)} ${a.avg.toFixed(2).padStart(10)} ${a.min.toFixed(2).padStart(10)} ${a.max.toFixed(2).padStart(10)} ${a.sum.toFixed(2).padStart(10)}`); }
+}
+
 const [cmd, ...args] = process.argv.slice(2);
 if (!cmd || cmd === '--help' || cmd === '-h' || cmd === 'help') { usage(); process.exit(0); }
 if (cmd === '--version' || cmd === '-v' || cmd === 'version') { console.log(VERSION); process.exit(0); }
@@ -261,12 +310,17 @@ try {
     if (!hasDelimiter && firstNonOption && existsSync(resolve(firstNonOption)) && firstNonOption.endsWith('.json')) {
       const wf = loadWorkflow(firstNonOption); const raw = args.includes('--raw'), plain = args.includes('--plain') || raw; const renderer = plain ? new FiberRenderer({ enabled: false }) : undefined; const onPacket = raw ? (p, m) => console.log(`${streamName(m.stream).padEnd(5)} ${formatPacket(p, { symbols: m.symbols })}`) : null; const r = await runWorkflow(wf, { renderer, experiment: process.env.PHASE_EXPERIMENT ?? null, onPacket }); if (plain && !raw) for (const x of r.outcomes) console.log(`${x.passed ? '✓' : '✗'} ${x.fiber_id} ${Math.round(x.wall_ms)}ms`); console.log(`\n${r.passed ? 'PASS' : 'FAIL'}  ${r.completed}/${r.fibers} fibers\nrun: ${r.run_dir}`); process.exitCode = r.passed ? 0 : 2;
     } else process.exitCode = await runProcessCommand(args);
-  } else if (cmd === 'ps') printPs();
+  } else if (cmd === 'ps') printPs(args.includes('--json'));
   else if (cmd === 'logs') await printLogs(args);
   else if (cmd === 'inspect' || cmd === 'status') inspectRun(args.find(x => !x.startsWith('-')) ?? 'latest', args.includes('--json'));
   else if (['pause', 'resume', 'stop', 'kill'].includes(cmd)) await controlRun(cmd, args[0] ?? 'latest');
   else if (cmd === 'emit') await emitEvent(args);
   else if (cmd === 'export') await exportRun(args);
+  else if (cmd === 'stats') {
+    let input = 'latest', emitType = null, field = null, json = args.includes('--json');
+    for (let i = 0; i < args.length; i++) { if (args[i] === '--emit') emitType = args[++i]; else if (args[i] === '--field') field = args[++i]; else if (args[i] === '--json') continue; else if (!args[i].startsWith('-')) input = args[i]; else throw new Error(`unknown stats argument: ${args[i]}`); }
+    statsRun(input, { emitType, field, json });
+  }
   else if (cmd === 'init') {
     const out = resolve(args[0] ?? 'phase-workflow.json'), cwd = resolve(args[1] ?? '.'); mkdirSync(dirname(out), { recursive: true }); writeFileSync(out, JSON.stringify(workflowTemplate(cwd), null, 2)); console.log(`Wrote ${out}`);
   } else if (cmd === 'compile') {
